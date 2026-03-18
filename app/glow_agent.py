@@ -45,7 +45,7 @@ print("First 5 rows: ",ingredients_df.head())
 
 # Clean ingredients dataset
 
-# drop the scientific name columns from the ingredients database as it has only null values
+# Drop the scientific name columns from the ingredients database as it has only null values
 ingredients_df = ingredients_df.dropna(axis=1, how='all')
 
 # Fill missing text fields
