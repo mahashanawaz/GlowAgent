@@ -141,20 +141,38 @@ embeddings = GoogleGenerativeAIEmbeddings(
     model="models/gemini-embedding-001"
 )
 
-"""# STEP 5: Storing in vector database"""
+"""# STEP 5: Storing in vector database (persisted to avoid re-embedding on every startup)"""
 
-vectorstore = Chroma.from_texts(
-    texts=all_chunks,
-    embedding=embeddings
-)
+CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
 
-# print("Vector database created with", vectorstore._collection.count(), "documents")
+# Load from disk if exists, otherwise create and persist (avoids hitting Gemini embedding quota on every restart)
+try:
+    vectorstore = Chroma(
+        persist_directory=str(CHROMA_PERSIST_DIR),
+        embedding_function=embeddings,
+        collection_name="glowagent_skincare",
+    )
+    # If empty, we need to populate it
+    if vectorstore._collection.count() == 0:
+        vectorstore = Chroma.from_texts(
+            texts=all_chunks,
+            embedding=embeddings,
+            persist_directory=str(CHROMA_PERSIST_DIR),
+            collection_name="glowagent_skincare",
+        )
+except Exception:
+    vectorstore = Chroma.from_texts(
+        texts=all_chunks,
+        embedding=embeddings,
+        persist_directory=str(CHROMA_PERSIST_DIR),
+        collection_name="glowagent_skincare",
+    )
 
 """# STEP 6: Tools"""
 
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
 
 """### a)  Database search tool"""
 @tool
@@ -374,9 +392,173 @@ result = tavily_search_tool("Neutrogena sunscreen")
 print(result)
 '''
 
-"""### e) Ranking tool """
+"""### e) Product Ranking Tool
 
-# Enter the code for ranking tool
+The product ranking tool scores and ranks skincare products from the local
+database based on the user's skin type, concerns, and product category.
+It helps the agent choose the best options (1st, 2nd, 3rd, etc.) when
+presenting recommendations.
+"""
+
+# Map user-friendly product terms to dataset product_type values
+PRODUCT_TYPE_ALIASES = {
+    "cleanser": ["Face Wash", "Cleanser"],
+    "face wash": ["Face Wash"],
+    "moisturizer": ["Moisturizer", "Face Cream", "Lotion"],
+    "serum": ["Serum", "Essence"],
+    "sunscreen": ["Sunscreen", "SPF"],
+    "toner": ["Toner"],
+    "treatment": ["Serum", "Treatment"],
+}
+
+
+def _score_product_for_ranking(row, skin_type: str, concerns: str, product_type_filter: str) -> float:
+    """
+    Score a single product (0-100) based on how well it matches user criteria.
+    Higher score = better match.
+    """
+    score = 0.0
+
+    # 1. Skin type match (products have Sensitive, Combination, Oily, Dry, Normal)
+    if skin_type:
+        skin_lower = skin_type.lower().strip()
+        skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
+        for col in skin_cols:
+            if col.lower() in skin_lower and col in row.index:
+                if row.get(col, 0) == 1:
+                    score += 15  # Strong match for stated skin type
+                break
+        # Also check skintype string column (e.g. "Normal, Dry, Oily")
+        skintype_str = str(row.get("skintype", "")).lower()
+        if skintype_str and any(s in skintype_str for s in skin_lower.split()):
+            score += 10
+
+    # 2. Effects/concerns match (notable_effects: "Acne-Free, Pore-Care, Brightening")
+    if concerns:
+        effects = str(row.get("notable_effects", "")).lower()
+        for concern in concerns.lower().split(","):
+            concern = concern.strip()
+            if not concern:
+                continue
+            # Map common concerns to effect keywords
+            concern_map = {
+                "acne": ["acne", "pore", "purifying", "clarifying"],
+                "pores": ["pore", "pore-care", "refining"],
+                "dryness": ["moisturizing", "hydration", "hydrating", "dry"],
+                "sensitivity": ["soothing", "sensitive", "calming", "gentle"],
+                "dark spots": ["brightening", "hyperpigmentation", "even"],
+                "aging": ["anti-aging", "wrinkle", "firming"],
+                "oil": ["oil-control", "balancing", "matifying"],
+            }
+            keywords = concern_map.get(concern, [concern])
+            if any(kw in effects for kw in keywords):
+                score += 12
+
+    # 3. Product type/category match
+    if product_type_filter:
+        pt_lower = product_type_filter.lower().strip()
+        row_pt = str(row.get("product_type", "")).lower()
+        matched = False
+        for alias, types in PRODUCT_TYPE_ALIASES.items():
+            if alias in pt_lower:
+                if any(t.lower() in row_pt for t in types):
+                    score += 20  # Strong match for category
+                matched = True
+                break
+        if not matched and pt_lower in row_pt:
+            score += 20  # Direct substring match
+
+    # 4. Base relevance
+    return max(0, min(100, score + 5))
+
+
+@tool
+def product_ranking_tool(
+    query: str,
+    skin_type: str = "",
+    concerns: str = "",
+    product_type: str = "",
+    allergies: str = "",
+    max_results: int = 5,
+) -> str:
+    """
+    Rank skincare products from the GlowAgent database by relevance to the user.
+
+    Use this tool when you have a recommendation scenario and want to present
+    the best options in order (1st choice, 2nd choice, etc.). Call this AFTER
+    skincare_database_search when you need to prioritize specific products, or
+    use it directly when the user asks for "top/best X products for Y".
+
+    Inputs:
+    - query: Natural language search (e.g. "moisturizer for oily acne-prone skin")
+    - skin_type: User's skin type: oily, dry, combination, sensitive, normal
+    - concerns: User's skin concerns (comma-separated): acne, pores, dryness, etc.
+    - product_type: Category filter: cleanser, moisturizer, serum, sunscreen, toner
+    - allergies: Ingredients to avoid (comma-separated): fragrance, niacinamide
+    - max_results: How many top products to return (default 5)
+
+    Returns: A ranked list of products with name, brand, category, effects,
+    skin types, and link — best match first.
+    """
+    # Filter out products that contain allergy terms
+    allergy_terms = [a.strip().lower() for a in allergies.split(",") if a.strip()]
+    candidates = products_df.copy()
+
+    for term in allergy_terms:
+        mask = (
+            candidates["product_name"].str.lower().str.contains(term, na=False)
+            | candidates["notable_effects"].str.lower().str.contains(term, na=False)
+        )
+        candidates = candidates[~mask]
+
+    if candidates.empty:
+        return f"No products found that avoid: {allergies}. Try broadening your search."
+
+    # Score each candidate
+    candidates["_rank_score"] = candidates.apply(
+        lambda row: _score_product_for_ranking(row, skin_type, concerns, product_type),
+        axis=1,
+    )
+
+    # Boost score for products retrieved by semantic search (query)
+    if query.strip():
+        try:
+            docs = vectorstore.similarity_search(query, k=20)
+            retrieved_names = set()
+            for doc in docs:
+                for line in doc.page_content.split("\n"):
+                    if line.startswith("Product:"):
+                        name = line.replace("Product:", "").strip()
+                        if name:
+                            retrieved_names.add(name)
+            def boost_from_retrieval(row):
+                base = row["_rank_score"]
+                if row["product_name"] in retrieved_names:
+                    return base + 25
+                return base
+
+            candidates["_rank_score"] = candidates.apply(boost_from_retrieval, axis=1)
+        except Exception:
+            pass
+
+    # Sort by score descending, take top N
+    ranked = candidates.nlargest(max_results, "_rank_score")
+    ranked = ranked.drop(columns=["_rank_score"], errors="ignore")
+
+    if ranked.empty:
+        return "No matching products found. Try adjusting filters or product type."
+
+    # Format output for the agent
+    lines = []
+    for i, (_, row) in enumerate(ranked.iterrows(), 1):
+        lines.append(
+            f"{i}. {row['product_name']} ({row['brand']})\n"
+            f"   Category: {row['product_type']} | Effects: {row['notable_effects']}\n"
+            f"   Skin types: {row['skin_types_str']}\n"
+            f"   Link: {row['product_href']}"
+        )
+    return "\n\n".join(lines)
+
 
 """### f) Notification tool"""
 
@@ -390,19 +572,25 @@ for U.S.-based users aged 18–24 who want effective, budget-friendly skincare
 recommendations. Your role is to act as a non-diagnostic, educational skincare
 guide that helps users build, evaluate, and optimize their routines.
 
-You have three tools. Use them in this priority order:
+You have four tools. Use them in this priority order:
 
 1. skincare_database_search
    USE FOR: Initial product recommendations, skin-type matching, budget filtering,
    product categories (cleanser, moisturizer, serum, sunscreen).
    Always try this tool FIRST.
 
-2. open_beauty_facts_search
+2. product_ranking_tool
+   USE FOR: Ranking products by relevance when the user wants "best", "top 3",
+   or prioritized options. Call with query + skin_type + concerns + product_type
+   + allergies to get products ordered best-to-worst. Use after or instead of
+   skincare_database_search when ordering matters.
+
+3. open_beauty_facts_search
    USE FOR: Verifying full ingredient lists, allergen checks (parabens, fragrance,
    sulfates), products not in the local database, or when a user asks what
    is in a specific named product.
 
-3. tavily_search
+4. tavily_search_tool
    USE FOR: Current prices, trending products, recent reviews, new launches,
    or any information that changes frequently.
    Use this LAST, or when the first two tools don't have enough information.
@@ -417,10 +605,10 @@ When giving skincare routine recommendations:
 Keep explanations clear, concise, and educational — not overly clinical.
 """
 
-agent = create_agent(
+agent = create_react_agent(
     llm,
-    tools=[skincare_database_search, open_beauty_facts_search, tavily_search_tool],
-    system_prompt=multi_tool_prompt
+    tools=[skincare_database_search, product_ranking_tool, open_beauty_facts_search, tavily_search_tool],
+    prompt=multi_tool_prompt
 )
 
 """# Step 8: Query the agent"""
