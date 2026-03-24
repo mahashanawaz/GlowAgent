@@ -24,8 +24,22 @@ load_dotenv()
 # Document Loading
 
 from pathlib import Path
-import pandas as pd
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import Chroma
 
+# only load the existing Chroma DB when the app starts up
+BASE_DIR = Path(__file__).resolve().parent.parent
+CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
+
+embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+
+vectorstore = Chroma(
+    persist_directory=str(CHROMA_PERSIST_DIR),
+    embedding_function=embeddings,
+    collection_name="glowagent_skincare",
+)
+
+"""
 # paths of the csv files
 BASE_DIR = Path(__file__).resolve().parent.parent
 ingredients_csv_path = BASE_DIR / "data" / "skincare_ingredients.csv"
@@ -86,8 +100,11 @@ products_df['skin_types_str'] = products_df[skin_cols].apply(
 )
 products_df['skin_types_str'] = products_df['skin_types_str'].replace('', 'Unknown')
 
+"""
+
 """# STEP 2: Chunking"""
 
+"""
 def format_ingredient_row(row):
     return (
         f"Ingredient: {row['name']}\n"
@@ -120,7 +137,10 @@ print("Total chunks created:", len(all_chunks))
 print(all_chunks[:2])  # preview first 2 chunks
 '''
 
+"""
+
 """# Step 3: LLM setup"""
+"""
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -129,9 +149,9 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
     google_api_key=os.environ.get("GOOGLE_API_KEY")
 )
-
+"""
 """# STEP 4: Embedding Setup"""
-
+"""
 # Embedding
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -140,12 +160,13 @@ from langchain_community.vectorstores import Chroma
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/gemini-embedding-001"
 )
-
+"""
 """# STEP 5: Storing in vector database (persisted to avoid re-embedding on every startup)"""
-
+"""
 CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
 
-# Load from disk if exists, otherwise create and persist (avoids hitting Gemini embedding quota on every restart)
+# Load from disk if exists, otherwise create and persist 
+# (avoids hitting Gemini embedding quota and Render deployment memnory limit on every restart)
 try:
     vectorstore = Chroma(
         persist_directory=str(CHROMA_PERSIST_DIR),
@@ -167,6 +188,17 @@ except Exception:
         persist_directory=str(CHROMA_PERSIST_DIR),
         collection_name="glowagent_skincare",
     )
+"""
+
+"""# Step 3: LLM setup"""
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Create the LLM with model gemini-2.0-flash
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash",
+    google_api_key=os.environ.get("GOOGLE_API_KEY")
+)
 
 """# STEP 6: Tools"""
 
