@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 from app.glow_agent import agent
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -14,8 +16,6 @@ app = FastAPI(
     description="A content creator agent powered by LangGraph",
     version="1.0.0"
 )
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +29,10 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/ui")
 
 @app.get("/health")
 async def health_check():
