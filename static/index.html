@@ -1,12 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Glow Agent</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap"
+    rel="stylesheet" />
+  <!-- Marked.js for markdown rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     :root {
       --navy: #002D45;
@@ -21,7 +32,8 @@
       --font-body: 'DM Sans', sans-serif;
     }
 
-    html, body {
+    html,
+    body {
       height: 100%;
       background-color: var(--navy-dark);
       color: var(--text);
@@ -35,8 +47,8 @@
       position: fixed;
       inset: 0;
       background-image:
-        linear-gradient(rgba(193,244,0,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(193,244,0,0.03) 1px, transparent 1px);
+        linear-gradient(rgba(193, 244, 0, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(193, 244, 0, 0.03) 1px, transparent 1px);
       background-size: 40px 40px;
       pointer-events: none;
       z-index: 0;
@@ -59,7 +71,7 @@
       align-items: center;
       gap: 14px;
       padding: 24px 0 20px;
-      border-bottom: 1px solid rgba(193,244,0,0.15);
+      border-bottom: 1px solid rgba(193, 244, 0, 0.15);
       flex-shrink: 0;
     }
 
@@ -100,8 +112,8 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      background: rgba(193,244,0,0.08);
-      border: 1px solid rgba(193,244,0,0.2);
+      background: rgba(193, 244, 0, 0.08);
+      border: 1px solid rgba(193, 244, 0, 0.2);
       border-radius: 20px;
       padding: 5px 12px;
       font-size: 11px;
@@ -119,8 +131,15 @@
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
     }
 
     /* Messages area */
@@ -132,12 +151,21 @@
       flex-direction: column;
       gap: 20px;
       scrollbar-width: thin;
-      scrollbar-color: rgba(193,244,0,0.2) transparent;
+      scrollbar-color: rgba(193, 244, 0, 0.2) transparent;
     }
 
-    .messages::-webkit-scrollbar { width: 4px; }
-    .messages::-webkit-scrollbar-track { background: transparent; }
-    .messages::-webkit-scrollbar-thumb { background: rgba(193,244,0,0.2); border-radius: 2px; }
+    .messages::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .messages::-webkit-scrollbar-thumb {
+      background: rgba(193, 244, 0, 0.2);
+      border-radius: 2px;
+    }
 
     /* Empty state */
     .empty-state {
@@ -174,12 +202,24 @@
     }
 
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
-    .message.user { align-items: flex-end; }
-    .message.agent { align-items: flex-start; }
+    .message.user {
+      align-items: flex-end;
+    }
+
+    .message.agent {
+      align-items: flex-start;
+    }
 
     .message-label {
       font-size: 10px;
@@ -210,8 +250,149 @@
       background: var(--bubble-agent);
       color: var(--text);
       border-bottom-left-radius: 4px;
-      border: 1px solid rgba(193,244,0,0.1);
+      border: 1px solid rgba(193, 244, 0, 0.1);
     }
+
+    /* ── Markdown styles inside agent bubbles ── */
+    .bubble.markdown-body p {
+      margin-bottom: 0.6em;
+    }
+
+    .bubble.markdown-body p:last-child {
+      margin-bottom: 0;
+    }
+
+    .bubble.markdown-body h1,
+    .bubble.markdown-body h2,
+    .bubble.markdown-body h3,
+    .bubble.markdown-body h4 {
+      font-family: var(--font-mono);
+      color: var(--lime);
+      margin: 0.9em 0 0.4em;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .bubble.markdown-body h1 {
+      font-size: 16px;
+    }
+
+    .bubble.markdown-body h2 {
+      font-size: 15px;
+    }
+
+    .bubble.markdown-body h3 {
+      font-size: 14px;
+    }
+
+    .bubble.markdown-body h4 {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .bubble.markdown-body ul,
+    .bubble.markdown-body ol {
+      padding-left: 1.4em;
+      margin: 0.4em 0 0.6em;
+    }
+
+    .bubble.markdown-body li {
+      margin-bottom: 0.3em;
+    }
+
+    .bubble.markdown-body li::marker {
+      color: var(--lime);
+    }
+
+    .bubble.markdown-body strong {
+      color: var(--lime);
+      font-weight: 600;
+    }
+
+    .bubble.markdown-body em {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .bubble.markdown-body code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(193, 244, 0, 0.08);
+      border: 1px solid rgba(193, 244, 0, 0.15);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--lime);
+    }
+
+    .bubble.markdown-body pre {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(193, 244, 0, 0.12);
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 0.6em 0;
+    }
+
+    .bubble.markdown-body pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 12px;
+    }
+
+    .bubble.markdown-body blockquote {
+      border-left: 3px solid var(--lime);
+      padding: 4px 12px;
+      margin: 0.6em 0;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .bubble.markdown-body hr {
+      border: none;
+      border-top: 1px solid rgba(193, 244, 0, 0.15);
+      margin: 0.8em 0;
+    }
+
+    .bubble.markdown-body a {
+      color: var(--lime);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .bubble.markdown-body a:hover {
+      opacity: 0.8;
+    }
+
+    .bubble.markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.6em 0;
+      font-size: 13px;
+    }
+
+    .bubble.markdown-body th {
+      background: rgba(193, 244, 0, 0.1);
+      color: var(--lime);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(193, 244, 0, 0.2);
+    }
+
+    .bubble.markdown-body td {
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .bubble.markdown-body tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* ── end markdown styles ── */
 
     /* Typing indicator */
     .typing-indicator {
@@ -220,7 +401,7 @@
       gap: 5px;
       padding: 14px 16px;
       background: var(--bubble-agent);
-      border: 1px solid rgba(193,244,0,0.1);
+      border: 1px solid rgba(193, 244, 0, 0.1);
       border-radius: 16px;
       border-bottom-left-radius: 4px;
       width: fit-content;
@@ -234,12 +415,27 @@
       animation: bounce 1.2s ease-in-out infinite;
     }
 
-    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    .typing-indicator span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-indicator span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
 
     @keyframes bounce {
-      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-      30% { transform: translateY(-5px); opacity: 1; }
+
+      0%,
+      60%,
+      100% {
+        transform: translateY(0);
+        opacity: 0.4;
+      }
+
+      30% {
+        transform: translateY(-5px);
+        opacity: 1;
+      }
     }
 
     /* Error message */
@@ -257,7 +453,7 @@
     .input-area {
       padding: 16px 0 28px;
       flex-shrink: 0;
-      border-top: 1px solid rgba(193,244,0,0.1);
+      border-top: 1px solid rgba(193, 244, 0, 0.1);
     }
 
     .api-url-row {
@@ -279,8 +475,8 @@
 
     .api-url-input {
       flex: 1;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(193,244,0,0.15);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(193, 244, 0, 0.15);
       border-radius: 8px;
       padding: 6px 10px;
       color: var(--text-muted);
@@ -291,11 +487,13 @@
     }
 
     .api-url-input:focus {
-      border-color: rgba(193,244,0,0.4);
+      border-color: rgba(193, 244, 0, 0.4);
       color: var(--text);
     }
 
-    .api-url-input::placeholder { color: rgba(122,173,190,0.4); }
+    .api-url-input::placeholder {
+      color: rgba(122, 173, 190, 0.4);
+    }
 
     .input-row {
       display: flex;
@@ -305,8 +503,8 @@
 
     .message-input {
       flex: 1;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(193,244,0,0.2);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(193, 244, 0, 0.2);
       border-radius: 14px;
       padding: 13px 16px;
       color: var(--text);
@@ -320,8 +518,13 @@
       transition: border-color 0.2s;
     }
 
-    .message-input:focus { border-color: rgba(193,244,0,0.5); }
-    .message-input::placeholder { color: rgba(122,173,190,0.5); }
+    .message-input:focus {
+      border-color: rgba(193, 244, 0, 0.5);
+    }
+
+    .message-input::placeholder {
+      color: rgba(122, 173, 190, 0.5);
+    }
 
     .send-btn {
       width: 50px;
@@ -337,9 +540,20 @@
       transition: transform 0.15s, background 0.15s;
     }
 
-    .send-btn:hover { transform: scale(1.05); background: #d4ff1a; }
-    .send-btn:active { transform: scale(0.97); }
-    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .send-btn:hover {
+      transform: scale(1.05);
+      background: #d4ff1a;
+    }
+
+    .send-btn:active {
+      transform: scale(0.97);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
 
     .send-btn svg {
       width: 20px;
@@ -356,193 +570,210 @@
     }
   </style>
 </head>
+
 <body>
-<div class="app">
+  <div class="app">
 
-  <header>
-    <div class="logo-mark">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M9 18V5l12-2v13" stroke="#002D45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="6" cy="18" r="3" stroke="#002D45" stroke-width="2"/>
-        <circle cx="18" cy="16" r="3" stroke="#002D45" stroke-width="2"/>
-      </svg>
-    </div>
-    <div class="header-text">
-      <h1>Glow Agent</h1>
-      <p>Skincare assistant powered by LangGraph</p>
-    </div>
-    <div class="status-pill">
-      <div class="status-dot"></div>
-      LIVE
-    </div>
-  </header>
-
-  <div class="messages" id="messages">
-    <div class="empty-state" id="emptyState">
-      <div class="big-icon">🎵</div>
-      <p>Ask Glow Agent about about skin care advice, produt recommendation, or to generate personalized, budget-conscious skincare routines for you.</p>
-    </div>
-  </div>
-
-  <div class="input-area">
-    <div class="api-url-row">
-      <span class="api-url-label">API URL</span>
-      <input
-        class="api-url-input"
-        id="apiUrl"
-        type="text"
-        placeholder="https://your-service-name.onrender.com"
-        placeholder="leave blank to use this page's server"
-      />
-    </div>
-    <div class="input-row">
-      <textarea
-        class="message-input"
-        id="messageInput"
-        placeholder="What face cleanser products do you recommend for oily, acne-prone skin?"
-        rows="1"
-      ></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    <header>
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M9 18V5l12-2v13" stroke="#002D45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="6" cy="18" r="3" stroke="#002D45" stroke-width="2" />
+          <circle cx="18" cy="16" r="3" stroke="#002D45" stroke-width="2" />
         </svg>
-      </button>
+      </div>
+      <div class="header-text">
+        <h1>Glow Agent</h1>
+        <p>Skincare assistant powered by LangGraph</p>
+      </div>
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        LIVE
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="big-icon">🎵</div>
+        <p>Ask Glow Agent about about skin care advice, produt recommendation, or to generate personalized,
+          budget-conscious skincare routines for you.</p>
+      </div>
     </div>
-    <p class="hint">Press Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+
+    <div class="input-area">
+      <div class="api-url-row">
+        <span class="api-url-label">API URL</span>
+        <input class="api-url-input" id="apiUrl" type="text" placeholder="https://your-service-name.onrender.com"
+          placeholder="leave blank to use this page's server" />
+      </div>
+      <div class="input-row">
+        <textarea class="message-input" id="messageInput"
+          placeholder="What face cleanser products do you recommend for oily, acne-prone skin?" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <p class="hint">Press Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+    </div>
+
   </div>
 
-</div>
+  <script>
+    // Configure marked.js options
+    marked.setOptions({
+      breaks: true,       // Convert \n to <br> inside paragraphs
+      gfm: true,          // GitHub-flavoured markdown (tables, strikethrough, etc.)
+      headerIds: false,   // Don't add id= attributes to headings (cleaner HTML)
+      mangle: false,
+    });
 
-<script>
-  const messagesEl = document.getElementById('messages');
-  const inputEl = document.getElementById('messageInput');
-  const sendBtn = document.getElementById('sendBtn');
-  const apiUrlEl = document.getElementById('apiUrl');
-  const emptyState = document.getElementById('emptyState');
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const apiUrlEl = document.getElementById('apiUrl');
+    const emptyState = document.getElementById('emptyState');
 
-  let isLoading = false;
+    let isLoading = false;
 
-  // Auto-resize textarea
-  inputEl.addEventListener('input', () => {
-    inputEl.style.height = 'auto';
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
-  });
+    // Auto-resize textarea
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+    });
 
-  // Enter to send, Shift+Enter for newline
-  inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
-  function appendMessage(role, text) {
-    if (emptyState) emptyState.remove();
-
-    const wrapper = document.createElement('div');
-    wrapper.className = `message ${role}`;
-
-    const label = document.createElement('div');
-    label.className = 'message-label';
-    label.textContent = role === 'user' ? 'You' : 'Glow Agent';
-
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.textContent = text;
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(bubble);
-    messagesEl.appendChild(wrapper);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    return wrapper;
-  }
-
-  function showTyping() {
-    if (emptyState) emptyState.remove();
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'message agent';
-    wrapper.id = 'typingIndicator';
-
-    const label = document.createElement('div');
-    label.className = 'message-label';
-    label.textContent = 'Glow Agent';
-
-    const indicator = document.createElement('div');
-    indicator.className = 'typing-indicator';
-    indicator.innerHTML = '<span></span><span></span><span></span>';
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(indicator);
-    messagesEl.appendChild(wrapper);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function removeTyping() {
-    const el = document.getElementById('typingIndicator');
-    if (el) el.remove();
-  }
-
-  function showError(msg) {
-    removeTyping();
-    const wrapper = document.createElement('div');
-    wrapper.className = 'message agent';
-
-    const label = document.createElement('div');
-    label.className = 'message-label';
-    label.textContent = 'GlowAgent';
-
-    const bubble = document.createElement('div');
-    bubble.className = 'error-bubble';
-    bubble.textContent = msg;
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(bubble);
-    messagesEl.appendChild(wrapper);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  async function sendMessage() {
-    const message = inputEl.value.trim();
-    const apiUrl = apiUrlEl.value.trim().replace(/\/$/, '');
-
-    if (!message || isLoading) return;
-
-    isLoading = true;
-    sendBtn.disabled = true;
-    inputEl.value = '';
-    inputEl.style.height = 'auto';
-
-    appendMessage('user', message);
-    showTyping();
-
-    const chatUrl = apiUrl ? `${apiUrl}/chat` : '/chat';
-
-    try {
-      const res = await fetch(chatUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-
-      removeTyping();
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        showError(`Error ${res.status}: ${err.detail || 'Something went wrong.'}`);
-      } else {
-        const data = await res.json();
-        appendMessage('agent', data.response);
+    // Enter to send, Shift+Enter for newline
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
       }
-    } catch (err) {
-      showError('Could not reach the API. Check your URL and make sure CORS is enabled in main.py.');
-    } finally {
-      isLoading = false;
-      sendBtn.disabled = false;
-      inputEl.focus();
+    });
+
+    function appendMessage(role, text) {
+      if (emptyState) emptyState.remove();
+
+      const wrapper = document.createElement('div');
+      wrapper.className = `message ${role}`;
+
+      const label = document.createElement('div');
+      label.className = 'message-label';
+      label.textContent = role === 'user' ? 'You' : 'Glow Agent';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+
+      if (role === 'agent') {
+        // Render markdown for agent messages
+        bubble.classList.add('markdown-body');
+        bubble.innerHTML = marked.parse(text);
+
+        // Open links in a new tab safely
+        bubble.querySelectorAll('a').forEach(a => {
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+        });
+      } else {
+        // Plain text for user messages
+        bubble.textContent = text;
+      }
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(bubble);
+      messagesEl.appendChild(wrapper);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return wrapper;
     }
-  }
-</script>
+
+    function showTyping() {
+      if (emptyState) emptyState.remove();
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message agent';
+      wrapper.id = 'typingIndicator';
+
+      const label = document.createElement('div');
+      label.className = 'message-label';
+      label.textContent = 'Glow Agent';
+
+      const indicator = document.createElement('div');
+      indicator.className = 'typing-indicator';
+      indicator.innerHTML = '<span></span><span></span><span></span>';
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(indicator);
+      messagesEl.appendChild(wrapper);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typingIndicator');
+      if (el) el.remove();
+    }
+
+    function showError(msg) {
+      removeTyping();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message agent';
+
+      const label = document.createElement('div');
+      label.className = 'message-label';
+      label.textContent = 'GlowAgent';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'error-bubble';
+      bubble.textContent = msg;
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(bubble);
+      messagesEl.appendChild(wrapper);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const message = inputEl.value.trim();
+      const apiUrl = apiUrlEl.value.trim().replace(/\/$/, '');
+
+      if (!message || isLoading) return;
+
+      isLoading = true;
+      sendBtn.disabled = true;
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+
+      appendMessage('user', message);
+      showTyping();
+
+      const chatUrl = apiUrl ? `${apiUrl}/chat` : '/chat';
+
+      try {
+        const res = await fetch(chatUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+
+        removeTyping();
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showError(`Error ${res.status}: ${err.detail || 'Something went wrong.'}`);
+        } else {
+          const data = await res.json();
+          appendMessage('agent', data.response);
+        }
+      } catch (err) {
+        showError('Could not reach the API. Check your URL and make sure CORS is enabled in main.py.');
+      } finally {
+        isLoading = false;
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
+  </script>
 </body>
+
 </html>
