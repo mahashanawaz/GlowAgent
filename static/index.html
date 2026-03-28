@@ -1203,193 +1203,21 @@ function renderWishlist() {
         <a href="${w.link||'#'}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center;text-decoration:none">Shop →</a>
         <button class="btn btn-secondary btn-sm btn-icon" onclick="removeFromWishlist(${w.id})" title="Remove">🗑</button>
       </div>
-      <div class="status-pill">
-        <div class="status-dot"></div>
-        LIVE
-      </div>
-    </header>
+    </div>`).join('');
+}
 
-    <div class="messages" id="messages">
-      <div class="empty-state" id="emptyState">
-        <div class="big-icon">🎵</div>
-        <p>Ask Glow Agent about about skin care advice, produt recommendation, or to generate personalized,
-          budget-conscious skincare routines for you.</p>
-      </div>
-    </div>
+// ════ SCHEDULED NOTIFICATIONS ════
+function scheduleNotifs() {
+  setTimeout(() => pushNotif({type:'info',icon:'👋',title:'Welcome to GlowAgent!',msg:'Complete your skin profile to unlock personalized routines and product picks.'}), 1500);
+  setTimeout(() => pushNotif({type:'info',icon:'🌅',title:'Morning Routine Reminder',msg:"Don't skip your SPF today! Consistent sun protection prevents dark spots."}), 9000);
+  setTimeout(() => pushNotif({type:'discount',icon:'🏷️',title:'Price Drop Alert!',msg:'CeraVe Moisturizing Cream is $12.99 on Amazon right now — that\'s $3 off!'}), 18000);
+  setTimeout(() => pushNotif({type:'warning',icon:'📅',title:'6-Week Check-In',msg:'Routines should be reassessed every 6–8 weeks. Chat with GlowAgent for updates!'}), 30000);
+  setTimeout(() => pushNotif({type:'success',icon:'🌿',title:'New Ingredient Data',msg:'The Ordinary Hyaluronic Acid 2% + B5 just added to our ingredient database.'}), 45000);
+}
 
-    <div class="input-area">
-      <div class="api-url-row">
-        <span class="api-url-label">API URL</span>
-        <input class="api-url-input" id="apiUrl" type="text" placeholder="https://your-service-name.onrender.com"
-          placeholder="leave blank to use this page's server" />
-      </div>
-      <div class="input-row">
-        <textarea class="message-input" id="messageInput"
-          placeholder="What face cleanser products do you recommend for oily, acne-prone skin?" rows="1"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-            stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </div>
-      <p class="hint">Press Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
-    </div>
+// ════ INIT ════
+loadProfile(); renderRoutine(); renderWishlist(); scheduleNotifs();
 
-  </div>
-
-  <script>
-    // Configure marked.js options
-    marked.setOptions({
-      breaks: true,       // Convert \n to <br> inside paragraphs
-      gfm: true,          // GitHub-flavoured markdown (tables, strikethrough, etc.)
-      headerIds: false,   // Don't add id= attributes to headings (cleaner HTML)
-      mangle: false,
-    });
-
-    const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('messageInput');
-    const sendBtn = document.getElementById('sendBtn');
-    const apiUrlEl = document.getElementById('apiUrl');
-    const emptyState = document.getElementById('emptyState');
-
-    let isLoading = false;
-
-    // Auto-resize textarea
-    inputEl.addEventListener('input', () => {
-      inputEl.style.height = 'auto';
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
-    });
-
-    // Enter to send, Shift+Enter for newline
-    inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-
-    function appendMessage(role, text) {
-      if (emptyState) emptyState.remove();
-
-      const wrapper = document.createElement('div');
-      wrapper.className = `message ${role}`;
-
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = role === 'user' ? 'You' : 'Glow Agent';
-
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-
-      if (role === 'agent') {
-        // Render markdown for agent messages
-        bubble.classList.add('markdown-body');
-        bubble.innerHTML = marked.parse(text);
-
-        // Open links in a new tab safely
-        bubble.querySelectorAll('a').forEach(a => {
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-        });
-      } else {
-        // Plain text for user messages
-        bubble.textContent = text;
-      }
-
-      wrapper.appendChild(label);
-      wrapper.appendChild(bubble);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return wrapper;
-    }
-
-    function showTyping() {
-      if (emptyState) emptyState.remove();
-
-      const wrapper = document.createElement('div');
-      wrapper.className = 'message agent';
-      wrapper.id = 'typingIndicator';
-
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = 'Glow Agent';
-
-      const indicator = document.createElement('div');
-      indicator.className = 'typing-indicator';
-      indicator.innerHTML = '<span></span><span></span><span></span>';
-
-      wrapper.appendChild(label);
-      wrapper.appendChild(indicator);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    function removeTyping() {
-      const el = document.getElementById('typingIndicator');
-      if (el) el.remove();
-    }
-
-    function showError(msg) {
-      removeTyping();
-      const wrapper = document.createElement('div');
-      wrapper.className = 'message agent';
-
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = 'GlowAgent';
-
-      const bubble = document.createElement('div');
-      bubble.className = 'error-bubble';
-      bubble.textContent = msg;
-
-      wrapper.appendChild(label);
-      wrapper.appendChild(bubble);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    async function sendMessage() {
-      const message = inputEl.value.trim();
-      const apiUrl = apiUrlEl.value.trim().replace(/\/$/, '');
-
-      if (!message || isLoading) return;
-
-      isLoading = true;
-      sendBtn.disabled = true;
-      inputEl.value = '';
-      inputEl.style.height = 'auto';
-
-      appendMessage('user', message);
-      showTyping();
-
-      const chatUrl = apiUrl ? `${apiUrl}/chat` : '/chat';
-
-      try {
-        const res = await fetch(chatUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-
-        removeTyping();
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          showError(`Error ${res.status}: ${err.detail || 'Something went wrong.'}`);
-        } else {
-          const data = await res.json();
-          appendMessage('agent', data.response);
-        }
-      } catch (err) {
-        showError('Could not reach the API. Check your URL and make sure CORS is enabled in main.py.');
-      } finally {
-        isLoading = false;
-        sendBtn.disabled = false;
-        inputEl.focus();
-      }
-    }
-  </script>
+</script>
 </body>
 </html>
