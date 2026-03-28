@@ -4,7 +4,6 @@ from pathlib import Path
 import pandas as pd
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +12,55 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ingredients_csv_path = BASE_DIR / "data" / "skincare_ingredients.csv"
 products_csv_path = BASE_DIR / "data" / "skincare_products.csv"
 CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
+
+def load_ingredients_df():
+    ingredients_df = pd.read_csv(ingredients_csv_path)
+    ingredients_df = ingredients_df.dropna(axis=1, how="all")
+
+    ingredient_text_cols = [
+        "name",
+        "short_description",
+        "what_is_it",
+        "what_does_it_do",
+        "who_is_it_good_for",
+        "who_should_avoid",
+        "url",
+    ]
+    for col in ingredient_text_cols:
+        if col in ingredients_df.columns:
+            ingredients_df[col] = ingredients_df[col].fillna("Unknown")
+
+    return ingredients_df
+
+def load_products_df():
+    products_df = pd.read_csv(products_csv_path)
+    products_df = products_df.dropna(axis=1, how="all")
+
+    product_text_cols = [
+        "product_name",
+        "product_type",
+        "brand",
+        "notable_effects",
+        "skintype",
+        "product_href",
+        "picture_src",
+    ]
+    for col in product_text_cols:
+        if col in products_df.columns:
+            products_df[col] = products_df[col].fillna("Unknown")
+
+    skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
+    for col in skin_cols:
+        if col in products_df.columns:
+            products_df[col] = products_df[col].fillna(0)
+
+    products_df["skin_types_str"] = products_df[skin_cols].apply(
+        lambda row: ", ".join([col for col in skin_cols if row[col] == 1]),
+        axis=1,
+    )
+    products_df["skin_types_str"] = products_df["skin_types_str"].replace("", "Unknown")
+
+    return products_df
 
 def format_ingredient_row(row):
     return (
@@ -39,33 +87,8 @@ def format_product_row(row):
     )
 
 def build_vectorstore():
-    ingredients_df = pd.read_csv(ingredients_csv_path)
-    products_df = pd.read_csv(products_csv_path)
-
-    ingredients_df = ingredients_df.dropna(axis=1, how='all')
-    products_df = products_df.dropna(axis=1, how='all')
-
-    ingredient_text_cols = ['name', 'short_description', 'what_is_it', 'what_does_it_do',
-                            'who_is_it_good_for', 'who_should_avoid', 'url']
-    for col in ingredient_text_cols:
-        if col in ingredients_df.columns:
-            ingredients_df[col] = ingredients_df[col].fillna('Unknown')
-
-    product_text_cols = ['product_name', 'product_type', 'brand', 'notable_effects', 'skintype', 'product_href', 'picture_src']
-    for col in product_text_cols:
-        if col in products_df.columns:
-            products_df[col] = products_df[col].fillna('Unknown')
-
-    skin_cols = ['Sensitive', 'Combination', 'Oily', 'Dry', 'Normal']
-    for col in skin_cols:
-        if col in products_df.columns:
-            products_df[col] = products_df[col].fillna(0)
-
-    products_df['skin_types_str'] = products_df[skin_cols].apply(
-        lambda row: ", ".join([col for col in skin_cols if row[col] == 1]),
-        axis=1
-    )
-    products_df['skin_types_str'] = products_df['skin_types_str'].replace('', 'Unknown')
+    ingredients_df = load_ingredients_df()
+    products_df = load_products_df()
 
     ingredient_chunks = [format_ingredient_row(row) for _, row in ingredients_df.iterrows()]
     product_chunks = [format_product_row(row) for _, row in products_df.iterrows()]

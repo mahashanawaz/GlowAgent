@@ -19,13 +19,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-"""#STEP 1: Load in the ingredient and product databases"""
+"""# STEP 1: Load in the ingredient and product databases"""
 
 # Document Loading
-
 from pathlib import Path
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
+from app.build_vectorstore import load_products_df
 
 # only load the existing Chroma DB when the app starts up
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,36 +41,9 @@ vectorstore = Chroma(
 
 import pandas as pd
 
-_products_csv_path = BASE_DIR / "data" / "skincare_products.csv"
-products_df = pd.read_csv(_products_csv_path)
-products_df = products_df.dropna(axis=1, how="all")
-
-_product_text_cols = [
-    "product_name",
-    "product_type",
-    "brand",
-    "notable_effects",
-    "skintype",
-    "product_href",
-    "picture_src",
-]
-for col in _product_text_cols:
-    if col in products_df.columns:
-        products_df[col] = products_df[col].fillna("Unknown")
-
-_skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
-for col in _skin_cols:
-    if col in products_df.columns:
-        products_df[col] = products_df[col].fillna(0)
-
-products_df["skin_types_str"] = products_df[_skin_cols].apply(
-    lambda row: ", ".join([c for c in _skin_cols if row[c] == 1]),
-    axis=1,
-)
-products_df["skin_types_str"] = products_df["skin_types_str"].replace("", "Unknown")
+products_df = load_products_df()
 
 _product_image_by_name = dict(zip(products_df["product_name"], products_df["picture_src"]))
-
 
 def _enrich_product_doc_with_image(page_content: str) -> str:
     """Insert Image: URL after More Info when the product exists in the local CSV (vector chunks may omit it)."""
@@ -98,159 +71,14 @@ def _enrich_product_doc_with_image(page_content: str) -> str:
         out.append(f"Image: {pic}")
     return "\n".join(out)
 
+"""# STEP 2: Set up short term memory"""
 
-"""
-# paths of the csv files
-BASE_DIR = Path(__file__).resolve().parent.parent
-ingredients_csv_path = BASE_DIR / "data" / "skincare_ingredients.csv"
-products_csv_path = BASE_DIR / "data" / "skincare_products.csv"
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.prebuilt import create_react_agent
 
-# Load CSVs
-ingredients_df = pd.read_csv(ingredients_csv_path)
-products_df = pd.read_csv(products_csv_path)
+checkpointer = InMemorySaver()
 
-'''
-# Inspect the ingredients dataset
-print("------Skincare Ingredients Dataset--------")
-print("Columns in the database: ", ingredients_df.columns.tolist())
-print("Number of Ingredients(rows): ", len(ingredients_df))
-print("First 5 rows: ",ingredients_df.head())
-'''
-
-# Clean ingredients dataset
-
-# Drop the scientific name columns from the ingredients database as it has only null values
-ingredients_df = ingredients_df.dropna(axis=1, how='all')
-
-# Fill missing text fields
-ingredient_text_cols = ['name', 'short_description', 'what_is_it', 'what_does_it_do',
-                        'who_is_it_good_for', 'who_should_avoid', 'url']
-for col in ingredient_text_cols:
-    if col in ingredients_df.columns:
-        ingredients_df[col] = ingredients_df[col].fillna('Unknown')
-
-'''
-# Inspect the products dataset
-print("------Skincare products Dataset--------")
-print("Columns in the database: ", products_df.columns.tolist())
-print("Number of Products(rows): ", len(products_df))
-print("first five rows: ",products_df.head())
-'''
-
-# Clean products dataset
-
-# Drop empty columns
-products_df = products_df.dropna(axis=1, how='all')
-
-# Fill missing text fields
-product_text_cols = ['product_name', 'product_type', 'brand', 'notable_effects', 'skintype', 'product_href', 'picture_src']
-for col in product_text_cols:
-    if col in products_df.columns:
-        products_df[col] = products_df[col].fillna('Unknown')
-
-# Combine boolean skin type columns into a single string
-skin_cols = ['Sensitive', 'Combination', 'Oily', 'Dry', 'Normal']
-for col in skin_cols:
-    if col in products_df.columns:
-        products_df[col] = products_df[col].fillna(0)  # fill missing booleans with 0
-
-products_df['skin_types_str'] = products_df[skin_cols].apply(
-    lambda row: ", ".join([col for col in skin_cols if row[col] == 1]),
-    axis=1
-)
-products_df['skin_types_str'] = products_df['skin_types_str'].replace('', 'Unknown')
-
-"""
-
-"""# STEP 2: Chunking"""
-
-"""
-def format_ingredient_row(row):
-    return (
-        f"Ingredient: {row['name']}\n"
-        f"Short Description: {row['short_description']}\n"
-        f"What It Is: {row['what_is_it']}\n"
-        f"What It Does: {row['what_does_it_do']}\n"
-        f"Who It Is Good For: {row['who_is_it_good_for']}\n"
-        f"Who Should Avoid: {row['who_should_avoid']}\n"
-        f"More Info: {row['url']}\n"
-        f"Source: GlowAgent ingredient dataset"
-    )
-
-def format_product_row(row):
-    return (
-        f"Product: {row['product_name']}\n"
-        f"Brand: {row['brand']}\n"
-        f"Category: {row['product_type']}\n"
-        f"Effects: {row['notable_effects']}\n"
-        f"Skin Types: {row['skin_types_str']}\n"
-        f"More Info: {row['product_href']}\n"
-        f"Source: GlowAgent product dataset"
-    )
-
-ingredient_chunks = [format_ingredient_row(row) for _, row in ingredients_df.iterrows()]
-product_chunks = [format_product_row(row) for _, row in products_df.iterrows()]
-
-all_chunks = product_chunks + ingredient_chunks
-'''
-print("Total chunks created:", len(all_chunks))
-print(all_chunks[:2])  # preview first 2 chunks
-'''
-
-"""
-
-"""# Step 3: LLM setup"""
-"""
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-# Create the LLM with model gemini-2.0-flash
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",
-    google_api_key=os.environ.get("GOOGLE_API_KEY")
-)
-"""
-"""# STEP 4: Embedding Setup"""
-"""
-# Embedding
-
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
-
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/gemini-embedding-001"
-)
-"""
-"""# STEP 5: Storing in vector database (persisted to avoid re-embedding on every startup)"""
-"""
-CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
-
-# Load from disk if exists, otherwise create and persist 
-# (avoids hitting Gemini embedding quota and Render deployment memnory limit on every restart)
-try:
-    vectorstore = Chroma(
-        persist_directory=str(CHROMA_PERSIST_DIR),
-        embedding_function=embeddings,
-        collection_name="glowagent_skincare",
-    )
-    # If empty, we need to populate it
-    if vectorstore._collection.count() == 0:
-        vectorstore = Chroma.from_texts(
-            texts=all_chunks,
-            embedding=embeddings,
-            persist_directory=str(CHROMA_PERSIST_DIR),
-            collection_name="glowagent_skincare",
-        )
-except Exception:
-    vectorstore = Chroma.from_texts(
-        texts=all_chunks,
-        embedding=embeddings,
-        persist_directory=str(CHROMA_PERSIST_DIR),
-        collection_name="glowagent_skincare",
-    )
-"""
-
-"""# Step 3: LLM setup"""
+"""# STEP 3: LLM setup"""
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -264,9 +92,8 @@ llm = ChatGoogleGenerativeAI(
 
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-from langgraph.prebuilt import create_react_agent
 
-"""### a)  Database search tool"""
+"""### Database search tool"""
 @tool
 def skincare_database_search(query: str) -> str:
     """
@@ -304,7 +131,7 @@ def skincare_database_search(query: str) -> str:
     enriched = [_enrich_product_doc_with_image(doc.page_content) for doc in docs]
     return "\n\n---\n\n".join(enriched)
 
-"""### b) Open Beauty Facts Search Tool"""
+"""### Open Beauty Facts Search Tool"""
 import time
 from langchain_core.tools import tool
 from openfoodfacts import API, APIVersion, Country, Environment, Flavor
@@ -391,7 +218,7 @@ def open_beauty_facts_search(query: str) -> str:
     except Exception as e:
         return f"Open Beauty Facts API error: {str(e)}"
 
-"""### c) Tavily as generel search tool for pricing"""
+"""### Tavily as general search tool for pricing"""
 import os
 import re
 import json
@@ -485,7 +312,7 @@ result = tavily_search_tool("Neutrogena sunscreen")
 print(result)
 '''
 
-"""### e) Product Ranking Tool
+"""### Product Ranking Tool
 
 The product ranking tool scores and ranks skincare products from the local
 database based on the user's skin type, concerns, and product category.
@@ -503,7 +330,6 @@ PRODUCT_TYPE_ALIASES = {
     "toner": ["Toner"],
     "treatment": ["Serum", "Treatment"],
 }
-
 
 def _score_product_for_ranking(row, skin_type: str, concerns: str, product_type_filter: str) -> float:
     """
@@ -563,7 +389,6 @@ def _score_product_for_ranking(row, skin_type: str, concerns: str, product_type_
 
     # 4. Base relevance
     return max(0, min(100, score + 5))
-
 
 @tool
 def product_ranking_tool(
@@ -656,8 +481,7 @@ def product_ranking_tool(
         lines.append(block)
     return "\n\n".join(lines)
 
-
-"""### f) Notification tool"""
+"""### Notification tool"""
 
 # Enter the code for notifcation tool
 
@@ -709,7 +533,8 @@ Keep explanations clear, concise, and educational — not overly clinical.
 agent = create_react_agent(
     llm,
     tools=[skincare_database_search, product_ranking_tool, open_beauty_facts_search, tavily_search_tool],
-    prompt=multi_tool_prompt
+    prompt=multi_tool_prompt,
+    checkpointer=checkpointer
 )
 
 """# Step 8: Query the agent"""
