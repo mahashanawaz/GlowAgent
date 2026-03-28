@@ -394,6 +394,210 @@
 
     /* ── end markdown styles ── */
 
+    .message.agent .bubble.bubble-rich {
+      max-width: 96%;
+      padding: 14px 16px;
+    }
+
+    .agent-text-segment {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .agent-text-segment + .product-card {
+      margin-top: 12px;
+    }
+
+    .product-card + .agent-text-segment {
+      margin-top: 12px;
+    }
+
+    .product-card + .product-card {
+      margin-top: 10px;
+    }
+
+    .agent-inline-link {
+      color: var(--lime);
+      text-decoration: underline;
+      word-break: break-all;
+    }
+
+    .product-card {
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(193,244,0,0.18);
+      background: rgba(0, 30, 46, 0.55);
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .product-card:hover {
+      border-color: rgba(193,244,0,0.35);
+      background: rgba(0, 40, 58, 0.65);
+    }
+
+    .product-card-thumb {
+      width: 72px;
+      height: 72px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .product-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .product-card-thumb--empty::after {
+      content: '◆';
+      font-size: 20px;
+      color: var(--text-muted);
+      opacity: 0.45;
+    }
+
+    .product-card-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .product-card-title {
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.35;
+      color: var(--text);
+    }
+
+    .product-card-cta {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--lime);
+      letter-spacing: 0.3px;
+    }
+
+    /* Markdown segments inside rich bubbles (product cards + text) */
+    .bubble.bubble-rich .markdown-body p {
+      margin-bottom: 0.6em;
+    }
+
+    .bubble.bubble-rich .markdown-body p:last-child {
+      margin-bottom: 0;
+    }
+
+    .bubble.bubble-rich .markdown-body h1,
+    .bubble.bubble-rich .markdown-body h2,
+    .bubble.bubble-rich .markdown-body h3,
+    .bubble.bubble-rich .markdown-body h4 {
+      font-family: var(--font-mono);
+      color: var(--lime);
+      margin: 0.9em 0 0.4em;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .bubble.bubble-rich .markdown-body h1 { font-size: 16px; }
+    .bubble.bubble-rich .markdown-body h2 { font-size: 15px; }
+    .bubble.bubble-rich .markdown-body h3 { font-size: 14px; }
+    .bubble.bubble-rich .markdown-body h4 { font-size: 13px; color: var(--text-muted); }
+
+    .bubble.bubble-rich .markdown-body ul,
+    .bubble.bubble-rich .markdown-body ol {
+      padding-left: 1.4em;
+      margin: 0.4em 0 0.6em;
+    }
+
+    .bubble.bubble-rich .markdown-body li { margin-bottom: 0.3em; }
+    .bubble.bubble-rich .markdown-body li::marker { color: var(--lime); }
+    .bubble.bubble-rich .markdown-body strong { color: var(--lime); font-weight: 600; }
+    .bubble.bubble-rich .markdown-body em { color: var(--text-muted); font-style: italic; }
+
+    .bubble.bubble-rich .markdown-body code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(193, 244, 0, 0.08);
+      border: 1px solid rgba(193, 244, 0, 0.15);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--lime);
+    }
+
+    .bubble.bubble-rich .markdown-body pre {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(193, 244, 0, 0.12);
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 0.6em 0;
+    }
+
+    .bubble.bubble-rich .markdown-body pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 12px;
+    }
+
+    .bubble.bubble-rich .markdown-body blockquote {
+      border-left: 3px solid var(--lime);
+      padding: 4px 12px;
+      margin: 0.6em 0;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .bubble.bubble-rich .markdown-body hr {
+      border: none;
+      border-top: 1px solid rgba(193, 244, 0, 0.15);
+      margin: 0.8em 0;
+    }
+
+    .bubble.bubble-rich .markdown-body a {
+      color: var(--lime);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .bubble.bubble-rich .markdown-body a:hover { opacity: 0.8; }
+
+    .bubble.bubble-rich .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.6em 0;
+      font-size: 13px;
+    }
+
+    .bubble.bubble-rich .markdown-body th {
+      background: rgba(193, 244, 0, 0.1);
+      color: var(--lime);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(193, 244, 0, 0.2);
+    }
+
+    .bubble.bubble-rich .markdown-body td {
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .bubble.bubble-rich .markdown-body tr:last-child td { border-bottom: none; }
+
     /* Typing indicator */
     .typing-indicator {
       display: flex;
@@ -603,8 +807,8 @@
     <div class="input-area">
       <div class="api-url-row">
         <span class="api-url-label">API URL</span>
-        <input class="api-url-input" id="apiUrl" type="text" placeholder="https://your-service-name.onrender.com"
-          placeholder="leave blank to use this page's server" />
+        <input class="api-url-input" id="apiUrl" type="text"
+          placeholder="Leave blank to use this server (e.g. http://127.0.0.1:8000)" />
       </div>
       <div class="input-row">
         <textarea class="message-input" id="messageInput"
@@ -623,13 +827,14 @@
   </div>
 
   <script>
-    // Configure marked.js options
-    marked.setOptions({
-      breaks: true,       // Convert \n to <br> inside paragraphs
-      gfm: true,          // GitHub-flavoured markdown (tables, strikethrough, etc.)
-      headerIds: false,   // Don't add id= attributes to headings (cleaner HTML)
-      mangle: false,
-    });
+    if (typeof marked !== 'undefined') {
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        headerIds: false,
+        mangle: false,
+      });
+    }
 
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('messageInput');
@@ -653,126 +858,332 @@
       }
     });
 
-    function appendMessage(role, text) {
-      if (emptyState) emptyState.remove();
+    function linkifyPlainTextFragment(text) {
+    const frag = document.createDocumentFragment();
+    if (!text) return frag;
+    const re = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s]*)/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) {
+        frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      const a = document.createElement('a');
+      a.href = m[1];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.className = 'agent-inline-link';
+      a.textContent = m[1];
+      frag.appendChild(a);
+      last = m.index + m[1].length;
+    }
+    if (last < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(last)));
+    }
+    return frag;
+  }
 
-      const wrapper = document.createElement('div');
-      wrapper.className = `message ${role}`;
+  function stripTrailingJunkFromUrl(u) {
+    if (!u) return u;
+    let s = u.trim();
+    while (/[),.;>]+$/.test(s) && s.length > 8) {
+      s = s.slice(0, -1);
+    }
+    return s;
+  }
 
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = role === 'user' ? 'You' : 'Glow Agent';
+  function parseAgentMessage(text) {
+    const lines = text.split('\n');
+    const segments = [];
+    const buf = [];
+    let pendingTitle = null;
 
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
+    const LINK_RE = /^\s*(?:\*\*)?\s*(Link|More Info):\s*(https?:\/\/\S+)/i;
+    const IMG_RE = /^\s*(?:\*\*)?\s*Image:\s*(https?:\/\/\S+)/i;
+    const LOOKAHEAD = 12;
 
-      if (role === 'agent') {
-        // Render markdown for agent messages
-        bubble.classList.add('markdown-body');
-        bubble.innerHTML = marked.parse(text);
+    function flushBuf() {
+      const t = buf.join('\n');
+      if (t) segments.push({ type: 'text', text: t });
+      buf.length = 0;
+    }
 
-        // Open links in a new tab safely
-        bubble.querySelectorAll('a').forEach(a => {
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-        });
-      } else {
-        // Plain text for user messages
-        bubble.textContent = text;
+    function cleanForMatch(line) {
+      return line.replace(/\*\*/g, '').trim();
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
+      const line = cleanForMatch(raw);
+
+      const num = line.match(/^(\d+)\.\s+(.+)$/);
+      if (num) pendingTitle = num[2].trim();
+
+      const prod = line.match(/^Product:\s*(.+)$/i);
+      if (prod) pendingTitle = prod[1].trim();
+
+      const headingName = line.match(/^([^:]+):\s*$/);
+      if (
+        headingName &&
+        headingName[1].length > 3 &&
+        headingName[1].length < 120 &&
+        !/^(why|skin|link|image|more info|when|note|category|effects)/i.test(headingName[1].trim())
+      ) {
+        pendingTitle = headingName[1].trim();
       }
 
-      wrapper.appendChild(label);
-      wrapper.appendChild(bubble);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return wrapper;
-    }
+      const linkOnLine = raw.match(LINK_RE) || (line && line.match(LINK_RE));
+      const imgOnLine = raw.match(IMG_RE) || (line && line.match(IMG_RE));
 
-    function showTyping() {
-      if (emptyState) emptyState.remove();
-
-      const wrapper = document.createElement('div');
-      wrapper.className = 'message agent';
-      wrapper.id = 'typingIndicator';
-
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = 'Glow Agent';
-
-      const indicator = document.createElement('div');
-      indicator.className = 'typing-indicator';
-      indicator.innerHTML = '<span></span><span></span><span></span>';
-
-      wrapper.appendChild(label);
-      wrapper.appendChild(indicator);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    function removeTyping() {
-      const el = document.getElementById('typingIndicator');
-      if (el) el.remove();
-    }
-
-    function showError(msg) {
-      removeTyping();
-      const wrapper = document.createElement('div');
-      wrapper.className = 'message agent';
-
-      const label = document.createElement('div');
-      label.className = 'message-label';
-      label.textContent = 'GlowAgent';
-
-      const bubble = document.createElement('div');
-      bubble.className = 'error-bubble';
-      bubble.textContent = msg;
-
-      wrapper.appendChild(label);
-      wrapper.appendChild(bubble);
-      messagesEl.appendChild(wrapper);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    async function sendMessage() {
-      const message = inputEl.value.trim();
-      const apiUrl = apiUrlEl.value.trim().replace(/\/$/, '');
-
-      if (!message || isLoading) return;
-
-      isLoading = true;
-      sendBtn.disabled = true;
-      inputEl.value = '';
-      inputEl.style.height = 'auto';
-
-      appendMessage('user', message);
-      showTyping();
-
-      const chatUrl = apiUrl ? `${apiUrl}/chat` : '/chat';
-
-      try {
-        const res = await fetch(chatUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
-        });
-
-        removeTyping();
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          showError(`Error ${res.status}: ${err.detail || 'Something went wrong.'}`);
-        } else {
-          const data = await res.json();
-          appendMessage('agent', data.response);
+      if (linkOnLine) {
+        const linkUrl = stripTrailingJunkFromUrl(linkOnLine[2]);
+        let imageUrl = '';
+        let consumed = i;
+        for (let j = i + 1; j < Math.min(lines.length, i + LOOKAHEAD); j++) {
+          const L = cleanForMatch(lines[j]);
+          if (!L) continue;
+          if (/^(Link|More Info):/i.test(L)) break;
+          const im = L.match(IMG_RE) || lines[j].match(IMG_RE);
+          if (im) {
+            imageUrl = stripTrailingJunkFromUrl(im[1]);
+            consumed = j;
+            break;
+          }
         }
-      } catch (err) {
-        showError('Could not reach the API. Check your URL and make sure CORS is enabled in main.py.');
-      } finally {
-        isLoading = false;
-        sendBtn.disabled = false;
-        inputEl.focus();
+        flushBuf();
+        segments.push({
+          type: 'card',
+          url: linkUrl,
+          image: imageUrl,
+          title: pendingTitle || ''
+        });
+        pendingTitle = null;
+        i = consumed;
+        continue;
+      }
+
+      if (imgOnLine && !linkOnLine) {
+        const imageUrl = stripTrailingJunkFromUrl(imgOnLine[1]);
+        let linkUrl = '';
+        let consumed = i;
+        for (let j = i + 1; j < Math.min(lines.length, i + LOOKAHEAD); j++) {
+          const L = cleanForMatch(lines[j]);
+          if (!L) continue;
+          if (/^Image:/i.test(L)) break;
+          const lm = L.match(LINK_RE) || lines[j].match(LINK_RE);
+          if (lm) {
+            linkUrl = stripTrailingJunkFromUrl(lm[2]);
+            consumed = j;
+            break;
+          }
+        }
+        if (linkUrl) {
+          flushBuf();
+          segments.push({
+            type: 'card',
+            url: linkUrl,
+            image: imageUrl,
+            title: pendingTitle || ''
+          });
+          pendingTitle = null;
+          i = consumed;
+          continue;
+        }
+      }
+
+      buf.push(raw);
+    }
+    flushBuf();
+    return segments;
+  }
+
+  function createProductCard({ url, image, title }) {
+    const a = document.createElement('a');
+    a.className = 'product-card';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'product-card-thumb';
+    const hasImg = image && /^https?:\/\//i.test(String(image).trim());
+    if (hasImg) {
+      const img = document.createElement('img');
+      img.src = image.trim();
+      img.alt = title || 'Product';
+      img.loading = 'lazy';
+      img.referrerPolicy = 'no-referrer-when-downgrade';
+      img.onerror = () => {
+        img.remove();
+        imgWrap.classList.add('product-card-thumb--empty');
+      };
+      imgWrap.appendChild(img);
+    } else {
+      imgWrap.classList.add('product-card-thumb--empty');
+    }
+
+    const body = document.createElement('div');
+    body.className = 'product-card-body';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'product-card-title';
+    titleEl.textContent = title || 'Recommended product';
+    const cta = document.createElement('span');
+    cta.className = 'product-card-cta';
+    cta.textContent = 'View product →';
+    body.appendChild(titleEl);
+    body.appendChild(cta);
+
+    a.appendChild(imgWrap);
+    a.appendChild(body);
+    return a;
+  }
+
+  function appendAgentMessage(text) {
+    if (emptyState) emptyState.remove();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message agent';
+
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.textContent = 'Glow Agent';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble bubble-rich';
+
+    const segments = parseAgentMessage(text);
+    for (const seg of segments) {
+      if (seg.type === 'text') {
+        const div = document.createElement('div');
+        div.className = 'markdown-body';
+        if (typeof marked !== 'undefined') {
+          div.innerHTML = marked.parse(seg.text);
+          div.querySelectorAll('a').forEach((a) => {
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+          });
+        } else {
+          div.appendChild(linkifyPlainTextFragment(seg.text));
+        }
+        bubble.appendChild(div);
+      } else if (seg.type === 'card') {
+        bubble.appendChild(createProductCard(seg));
       }
     }
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return wrapper;
+  }
+
+  function appendMessage(role, text) {
+    if (emptyState) emptyState.remove();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${role}`;
+
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.textContent = role === 'user' ? 'You' : 'Glow Agent';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return wrapper;
+  }
+
+  function showTyping() {
+    if (emptyState) emptyState.remove();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message agent';
+    wrapper.id = 'typingIndicator';
+
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.textContent = 'Glow Agent';
+
+    const indicator = document.createElement('div');
+    indicator.className = 'typing-indicator';
+    indicator.innerHTML = '<span></span><span></span><span></span>';
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(indicator);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function removeTyping() {
+    const el = document.getElementById('typingIndicator');
+    if (el) el.remove();
+  }
+
+  function showError(msg) {
+    removeTyping();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message agent';
+
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.textContent = 'GlowAgent';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'error-bubble';
+    bubble.textContent = msg;
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function sendMessage() {
+    const message = inputEl.value.trim();
+    const apiUrl = apiUrlEl.value.trim().replace(/\/$/, '');
+
+    if (!message || isLoading) return;
+
+    isLoading = true;
+    sendBtn.disabled = true;
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+
+    appendMessage('user', message);
+    showTyping();
+
+    const chatUrl = apiUrl ? `${apiUrl}/chat` : '/chat';
+
+    try {
+      const res = await fetch(chatUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+
+      removeTyping();
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showError(`Error ${res.status}: ${err.detail || 'Something went wrong.'}`);
+      } else {
+        const data = await res.json();
+        appendAgentMessage(data.response);
+      }
+    } catch (err) {
+      showError('Could not reach the API. Check your URL and make sure CORS is enabled in main.py.');
+    } finally {
+      isLoading = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
   </script>
 </body>
 
