@@ -39,6 +39,66 @@ vectorstore = Chroma(
     collection_name="glowagent_skincare",
 )
 
+import pandas as pd
+
+_products_csv_path = BASE_DIR / "data" / "skincare_products.csv"
+products_df = pd.read_csv(_products_csv_path)
+products_df = products_df.dropna(axis=1, how="all")
+
+_product_text_cols = [
+    "product_name",
+    "product_type",
+    "brand",
+    "notable_effects",
+    "skintype",
+    "product_href",
+    "picture_src",
+]
+for col in _product_text_cols:
+    if col in products_df.columns:
+        products_df[col] = products_df[col].fillna("Unknown")
+
+_skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
+for col in _skin_cols:
+    if col in products_df.columns:
+        products_df[col] = products_df[col].fillna(0)
+
+products_df["skin_types_str"] = products_df[_skin_cols].apply(
+    lambda row: ", ".join([c for c in _skin_cols if row[c] == 1]),
+    axis=1,
+)
+products_df["skin_types_str"] = products_df["skin_types_str"].replace("", "Unknown")
+
+_product_image_by_name = dict(zip(products_df["product_name"], products_df["picture_src"]))
+
+
+def _enrich_product_doc_with_image(page_content: str) -> str:
+    """Insert Image: URL after More Info when the product exists in the local CSV (vector chunks may omit it)."""
+    if "Image:" in page_content:
+        return page_content
+    name = None
+    for line in page_content.split("\n"):
+        if line.startswith("Product:"):
+            name = line.replace("Product:", "").strip()
+            break
+    if not name:
+        return page_content
+    pic = _product_image_by_name.get(name)
+    if not pic or str(pic) in ("Unknown", "nan") or not str(pic).startswith("http"):
+        return page_content
+    lines = page_content.split("\n")
+    out = []
+    inserted = False
+    for line in lines:
+        out.append(line)
+        if not inserted and line.startswith("More Info:"):
+            out.append(f"Image: {pic}")
+            inserted = True
+    if not inserted:
+        out.append(f"Image: {pic}")
+    return "\n".join(out)
+
+
 """
 # paths of the csv files
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -241,7 +301,8 @@ def skincare_database_search(query: str) -> str:
     docs = vectorstore.similarity_search(query, k=4)
     if not docs:
         return "No matching skincare products found."
-    return "\n\n---\n\n".join(doc.page_content for doc in docs)
+    enriched = [_enrich_product_doc_with_image(doc.page_content) for doc in docs]
+    return "\n\n---\n\n".join(enriched)
 
 """### b) Open Beauty Facts Search Tool"""
 import time
@@ -530,7 +591,7 @@ def product_ranking_tool(
     - max_results: How many top products to return (default 5)
 
     Returns: A ranked list of products with name, brand, category, effects,
-    skin types, and link — best match first.
+    skin types, link, and image URL when available — best match first.
     """
     # Filter out products that contain allergy terms
     allergy_terms = [a.strip().lower() for a in allergies.split(",") if a.strip()]
@@ -583,12 +644,16 @@ def product_ranking_tool(
     # Format output for the agent
     lines = []
     for i, (_, row) in enumerate(ranked.iterrows(), 1):
-        lines.append(
+        block = (
             f"{i}. {row['product_name']} ({row['brand']})\n"
             f"   Category: {row['product_type']} | Effects: {row['notable_effects']}\n"
             f"   Skin types: {row['skin_types_str']}\n"
             f"   Link: {row['product_href']}"
         )
+        pic = row.get("picture_src", "")
+        if pic and str(pic) not in ("Unknown", "nan") and str(pic).startswith("http"):
+            block += f"\n   Image: {pic}"
+        lines.append(block)
     return "\n\n".join(lines)
 
 
@@ -633,6 +698,10 @@ When giving skincare routine recommendations:
   price, skin type suitability, and any allergen flags
 - Suggest a lower-cost alternative when possible
 - End with a short summary, safety notes, and reassessment timeline (6–8 weeks)
+
+When tools return products from the GlowAgent database, preserve each product's
+Link and Image lines (and "More Info" + Image from skincare_database_search)
+exactly as returned so the chat UI can show thumbnails and clickable product pages.
 
 Keep explanations clear, concise, and educational — not overly clinical.
 """

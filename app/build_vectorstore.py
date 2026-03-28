@@ -34,6 +34,7 @@ def format_product_row(row):
         f"Effects: {row['notable_effects']}\n"
         f"Skin Types: {row['skin_types_str']}\n"
         f"More Info: {row['product_href']}\n"
+        f"Image: {row['picture_src']}\n"
         f"Source: GlowAgent product dataset"
     )
 
