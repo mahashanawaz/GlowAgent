@@ -5,6 +5,7 @@ langchain-community
 langchain-google-genai
 langchain-text-splitters
 langchain-tavily
+langchain-chroma
 tavily-python
 langgraph
 langsmith
