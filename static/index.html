@@ -548,6 +548,8 @@ const S = {
   attachedImages: [],
 };
 
+let threadId = localStorage.getItem('glow_thread_id') || null;
+
 // ════ PAGE TITLES ════
 const PAGE_TITLES = {
   chat:    '<em>Chat</em> with GlowAgent',
@@ -876,19 +878,38 @@ async function sendMessage() {
   const inp = document.getElementById('msg-input');
   const text = inp.value.trim();
   const imgs = [...S.attachedImages];
+
   if (!text && !imgs.length) return;
+
   appendMsg('user', text || '(image attached for analysis)', imgs.length ? imgs[0].dataUrl : null);
   inp.value = ''; inp.style.height = '44px';
   clearImageAttachments();
+
   document.getElementById('send-btn').disabled = true;
   const typing = showTyping();
+
   const fullMsg = buildProfileCtx() + (text || 'I have uploaded a photo of my skin. Please analyze it and provide skincare recommendations for my concerns.');
+  
   try {
-    const res = await fetch(getEndpoint(), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:fullMsg})});
+    const res = await fetch(getEndpoint(), {
+      method: 'POST', 
+      headers: {'Content-Type':'application/json'}, 
+      body: JSON.stringify({
+        message:fullMsg,
+        thread_id: threadId
+        })
+      });
+
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
+    if (data.thread_id) {
+      threadId = data.thread_id;
+      localStorage.setItem('glow_thread_id', threadId);
+    }
+
     typing.remove();
     appendAgentMessage(data.response ?? '(no response)');
+
     const r = (data.response || '').toLowerCase();
     if (r.match(/discount|sale|\d+%\s*off|deal|save \$/)) {
       setTimeout(() => pushNotif({type:'discount', icon:'🏷️', title:'Discount detected in response!', msg:'GlowAgent found a deal. Check the message above!'}), 800);
@@ -1125,8 +1146,21 @@ async function runScan() {
   res.innerHTML = '<div style="display:flex;gap:8px;align-items:center;color:var(--muted);font-size:.85rem"><div class="dot"></div><div class="dot"></div><div class="dot"></div>&nbsp;Analyzing…</div>';
   if (prod && !ings) {
     try {
-      const r = await fetch(getEndpoint(), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:`${buildProfileCtx()}What ingredients are in "${prod}"? Flag any that could be problematic for my skin type and allergy list.`})});
+      const r = await fetch(getEndpoint(), {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          message: `${buildProfileCtx()}What ingredients are in "${prod}"? Flag any that could be problematic for my skin type and allergy list.`,
+          thread_id: threadId
+          })
+        });
+
       const data = await r.json();
+      if (data.thread_id) {
+      threadId = data.thread_id;
+      localStorage.setItem('glow_thread_id', threadId);
+      }
+
       res.innerHTML = `<div style="font-size:.83rem;line-height:1.8;white-space:pre-wrap;color:var(--text)">${data.response||'No data returned.'}</div>`;
     } catch(e) { res.innerHTML = `<div style="color:var(--rose);font-size:.83rem">⚠️ ${e.message}</div>`; }
     return;
