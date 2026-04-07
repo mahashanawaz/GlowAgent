@@ -1,11 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
+
+
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GlowAgent ✦ AI Skincare</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Nunito:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -253,6 +257,49 @@ input[type=range]{width:100%;accent-color:var(--rose)}
     </div>
   </div>
   <div class="np-list" id="notif-list"><div class="np-empty">No notifications yet</div></div>
+</div>
+
+<!-- It shows when the user is not authenticated.-->
+<div id="login-overlay" style="
+  display: flex;
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 24px;
+">
+  <div style="text-align: center; max-width: 360px; padding: 0 24px;">
+    <div style="font-family: 'Playfair Display', serif; font-size: 2.5rem; color: var(--deep);">
+      <em style="color: var(--rose);">Glow</em>Agent
+    </div>
+    <p style="color: var(--muted); font-size: .9rem; margin: 12px 0 28px; line-height: 1.7;">
+      Your AI-powered skincare assistant.<br/>
+      Sign in to get personalized routines, ingredient checks, and budget picks.
+    </p>
+    <button
+      onclick="login()"
+      style="
+        width: 100%;
+        padding: 14px;
+        background: var(--rose);
+        color: #fff;
+        border: none;
+        border-radius: 12px;
+        font-family: 'Nunito', sans-serif;
+        font-size: .95rem;
+        font-weight: 700;
+        cursor: pointer;
+      "
+    >
+      Sign in / Create account
+    </button>
+    <p style="font-size: .72rem; color: var(--muted2); margin-top: 16px;">
+      Supports Google, email, and more. No credit card required.
+    </p>
+  </div>
 </div>
 
 <div id="app">
@@ -515,25 +562,181 @@ input[type=range]{width:100%;accent-color:var(--rose)}
       </div>
     </div>
 
-    <!-- WISHLIST PAGE -->
-    <div class="page" id="wishlist-page">
-      <div class="page-scroll">
-        <div class="section-header">
-          <h2>My <em>Wishlist</em></h2>
-          <p>Products GlowAgent recommended that you want to try. Saved locally.</p>
-        </div>
-        <div class="wishlist-grid" id="wishlist-grid"></div>
-        <div style="margin-top:20px;display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="addSampleToWishlist()">+ Add sample product</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearWishlist()">🗑 Clear all</button>
-        </div>
-      </div>
-    </div>
-
   </div><!-- /main -->
 </div><!-- /app -->
 
 <script>
+
+// ════ AUTH0 CONFIG — replace these values with yours from auth0.com ════
+const AUTH0_DOMAIN   = 'glowagent.us.auth0.com';   // e.g. glowagent.us.auth0.com
+const AUTH0_CLIENT_ID = '3xrwvbP9b7hMSgBa9aPLyRPw2xLg5wVT';   // from Auth0 dashboard
+const AUTH0_AUDIENCE  = 'https://glowagent-api';      // you'll create this in Step 3
+ 
+let auth0Client = null;
+ 
+// ── Initialize Auth0 on page load ──
+async function initAuth0() {
+  auth0Client = await auth0.createAuth0Client({
+    domain: AUTH0_DOMAIN,
+    clientId: AUTH0_CLIENT_ID,
+    authorizationParams: {
+      redirect_uri: window.location.origin + '/ui',
+      audience: AUTH0_AUDIENCE,
+    },
+    cacheLocation: 'localstorage',  // keeps user logged in across refreshes
+  });
+ 
+  // Handle the redirect back from Auth0 after login
+  if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
+    try {
+      await auth0Client.handleRedirectCallback();
+    } catch (e) {
+      console.error('Auth callback error:', e);
+    }
+    // Clean up the URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+ 
+  const isAuthenticated = await auth0Client.isAuthenticated();
+ 
+  if (!isAuthenticated) {
+    // Not logged in — show login screen, block the app
+    showLoginScreen();
+  } else {
+    // Logged in — load the app, check profile completion
+    const user = await auth0Client.getUser();
+    S.currentUser = user;
+    hideLoginScreen();
+    loadProfile();
+    renderRoutine();
+    renderWishlist();
+    scheduleNotifs();
+    checkProfileComplete();
+  }
+}
+ 
+// ── Show/hide login overlay ──
+function showLoginScreen() {
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+ 
+function hideLoginScreen() {
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+}
+ 
+// ── Login / Logout ──
+async function login() {
+  await auth0Client.loginWithRedirect();
+  // User is redirected away — execution stops here
+}
+ 
+async function logout() {
+  auth0Client.logout({
+    logoutParams: { returnTo: window.location.origin + '/ui' }
+  });
+}
+ 
+// ── Get JWT token for API requests ──
+async function getToken() {
+  try {
+    return await auth0Client.getTokenSilently();
+  } catch (e) {
+    // Token expired or user logged out elsewhere
+    showLoginScreen();
+    return null;
+  }
+}
+ 
+// ── Profile completion check ──
+// After login, if the user hasn't saved a profile yet, nudge them to do so.
+function checkProfileComplete() {
+  const p = S.profile;
+  const isComplete = p && p.name && p.skinType && p.concerns && p.concerns.length > 0;
+  if (!isComplete) {
+    // Show a banner or auto-navigate to profile
+    setTimeout(() => {
+      pushNotif({
+        type: 'warning',
+        icon: '👤',
+        title: 'Complete your profile!',
+        msg: 'Tell us your skin type and concerns so GlowAgent can personalize your recommendations.',
+        toast: true,
+      });
+      // Optionally auto-navigate:
+      // showPage('profile');
+    }, 1500);
+  }
+}
+ 
+// ════ UPDATED sendMessage — attaches JWT to every /chat request ════
+async function sendMessage() {
+  const inp = document.getElementById('msg-input');
+  const text = inp.value.trim();
+  const imgs = [...S.attachedImages];
+ 
+  if (!text && !imgs.length) return;
+ 
+  appendMsg('user', text || '(image attached for analysis)', imgs.length ? imgs[0].dataUrl : null);
+  inp.value = ''; inp.style.height = '44px';
+  clearImageAttachments();
+ 
+  document.getElementById('send-btn').disabled = true;
+  const typing = showTyping();
+ 
+  const fullMsg = buildProfileCtx() + (text || 'I have uploaded a photo of my skin. Please analyze it and provide skincare recommendations.');
+ 
+  // Get the JWT
+  const token = await getToken();
+  if (!token) { typing.remove(); return; }
+ 
+  try {
+    const res = await fetch(getEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,    // <-- the key addition
+      },
+      body: JSON.stringify({
+        message: fullMsg,
+        thread_id: threadId,
+      }),
+    });
+ 
+    if (res.status === 401) {
+      typing.remove();
+      showLoginScreen();
+      return;
+    }
+ 
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const data = await res.json();
+    if (data.thread_id) {
+      threadId = data.thread_id;
+      localStorage.setItem('glow_thread_id', threadId);
+    }
+ 
+    typing.remove();
+    appendAgentMessage(data.response ?? '(no response)');
+ 
+    const r = (data.response || '').toLowerCase();
+    if (r.match(/discount|sale|\d+%\s*off|deal|save \$/)) {
+      setTimeout(() => pushNotif({
+        type: 'discount', icon: '🏷️',
+        title: 'Discount detected!',
+        msg: 'GlowAgent found a deal. Check the message above!',
+      }), 800);
+    }
+  } catch(e) {
+    typing.remove();
+    appendMsg('agent', `⚠️ ${e.message}`);
+  } finally {
+    document.getElementById('send-btn').disabled = false;
+    inp.focus();
+  }
+}
+
 if (typeof marked !== 'undefined') {
   marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
 }
@@ -874,53 +1077,6 @@ function showTyping() {
   return wrap;
 }
 
-async function sendMessage() {
-  const inp = document.getElementById('msg-input');
-  const text = inp.value.trim();
-  const imgs = [...S.attachedImages];
-
-  if (!text && !imgs.length) return;
-
-  appendMsg('user', text || '(image attached for analysis)', imgs.length ? imgs[0].dataUrl : null);
-  inp.value = ''; inp.style.height = '44px';
-  clearImageAttachments();
-
-  document.getElementById('send-btn').disabled = true;
-  const typing = showTyping();
-
-  const fullMsg = buildProfileCtx() + (text || 'I have uploaded a photo of my skin. Please analyze it and provide skincare recommendations for my concerns.');
-  
-  try {
-    const res = await fetch(getEndpoint(), {
-      method: 'POST', 
-      headers: {'Content-Type':'application/json'}, 
-      body: JSON.stringify({
-        message:fullMsg,
-        thread_id: threadId
-        })
-      });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    const data = await res.json();
-    if (data.thread_id) {
-      threadId = data.thread_id;
-      localStorage.setItem('glow_thread_id', threadId);
-    }
-
-    typing.remove();
-    appendAgentMessage(data.response ?? '(no response)');
-
-    const r = (data.response || '').toLowerCase();
-    if (r.match(/discount|sale|\d+%\s*off|deal|save \$/)) {
-      setTimeout(() => pushNotif({type:'discount', icon:'🏷️', title:'Discount detected in response!', msg:'GlowAgent found a deal. Check the message above!'}), 800);
-    }
-  } catch(e) {
-    typing.remove(); appendMsg('agent', `⚠️ ${e.message}`);
-  } finally {
-    document.getElementById('send-btn').disabled = false; inp.focus();
-  }
-}
-
 function sendChip(msg) { document.getElementById('msg-input').value = msg; sendMessage(); }
 
 // Image attachment
@@ -1196,50 +1352,6 @@ function clearScan() {
   document.getElementById('scanner-results').innerHTML = 'Results will appear here after scanning.';
 }
 
-// ════ WISHLIST ════
-S.wishlist = (() => { try { return JSON.parse(localStorage.getItem('glow_wishlist')||'[]'); } catch(e) { return []; } })();
-
-const SAMPLES = [
-  {icon:'🧼',name:'CeraVe Hydrating Cleanser',brand:'CeraVe',price:'$14.99',tags:['Dry','Sensitive','Fragrance-free'],link:'https://www.cerave.com'},
-  {icon:'✨',name:'Niacinamide 10% + Zinc 1%',brand:'The Ordinary',price:'$6.70',tags:['Oily','Acne','Pores'],link:'https://theordinary.com'},
-  {icon:'☀️',name:'Neutrogena Hydro Boost SPF 50',brand:'Neutrogena',price:'$17.99',tags:['SPF','Hydrating'],link:'https://www.neutrogena.com'},
-  {icon:'🧴',name:'Cetaphil Moisturizing Cream',brand:'Cetaphil',price:'$12.49',tags:['All skin','Gentle'],link:'https://www.cetaphil.com'},
-];
-let sampleIdx = 0;
-
-function addSampleToWishlist() {
-  const p = SAMPLES[sampleIdx++ % SAMPLES.length];
-  S.wishlist.push({...p, id:Date.now()});
-  saveWishlist(); renderWishlist();
-  pushNotif({type:'success',icon:'🛒',title:'Added to Wishlist',msg:`${p.name} saved!`});
-}
-
-function removeFromWishlist(id) { S.wishlist = S.wishlist.filter(w=>w.id!==id); saveWishlist(); renderWishlist(); }
-function saveWishlist() { localStorage.setItem('glow_wishlist', JSON.stringify(S.wishlist)); }
-function clearWishlist() { S.wishlist = []; saveWishlist(); renderWishlist(); }
-
-function renderWishlist() {
-  const grid = document.getElementById('wishlist-grid');
-  if (!S.wishlist.length) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)"><div style="font-size:2.5rem;margin-bottom:12px">🛒</div><p style="font-size:.85rem">Your wishlist is empty.<br/>Ask GlowAgent for recommendations and save products here.</p></div>`;
-    return;
-  }
-  grid.innerHTML = S.wishlist.map(w=>`
-    <div class="wish-card">
-      <div class="wish-card-top">${w.icon}</div>
-      <div class="wish-card-body">
-        <div class="wish-name">${w.name}</div>
-        <div class="wish-brand">${w.brand}</div>
-        <div class="wish-price">${w.price}</div>
-        <div class="wish-tags">${(w.tags||[]).map(t=>`<span class="wish-tag">${t}</span>`).join('')}</div>
-      </div>
-      <div class="wish-actions">
-        <a href="${w.link||'#'}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center;text-decoration:none">Shop →</a>
-        <button class="btn btn-secondary btn-sm btn-icon" onclick="removeFromWishlist(${w.id})" title="Remove">🗑</button>
-      </div>
-    </div>`).join('');
-}
-
 // ════ SCHEDULED NOTIFICATIONS ════
 function scheduleNotifs() {
   setTimeout(() => pushNotif({type:'info',icon:'👋',title:'Welcome to GlowAgent!',msg:'Complete your skin profile to unlock personalized routines and product picks.'}), 1500);
@@ -1249,8 +1361,8 @@ function scheduleNotifs() {
   setTimeout(() => pushNotif({type:'success',icon:'🌿',title:'New Ingredient Data',msg:'The Ordinary Hyaluronic Acid 2% + B5 just added to our ingredient database.'}), 45000);
 }
 
-// ════ INIT ════
-loadProfile(); renderRoutine(); renderWishlist(); scheduleNotifs();
+// ════ START ════
+initAuth0();
 
 </script>
 </body>
