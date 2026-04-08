@@ -15,6 +15,7 @@ GlowAgent is an AI skincare assistant designed for 18–24 year olds in the U.S.
 # Configure API keys
 
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,7 +42,14 @@ vectorstore = Chroma(
 
 import pandas as pd
 
+# Local CSV was scraped from beautyhaul.com; those PDPs often 404. Never feed them to the model.
 products_df = load_products_df()
+if "product_href" in products_df.columns:
+    _bh_href = products_df["product_href"].astype(str).str.contains(
+        "beautyhaul", case=False, na=False
+    )
+    products_df = products_df.copy()
+    products_df.loc[_bh_href, "product_href"] = ""
 
 _product_image_by_name = dict(zip(products_df["product_name"], products_df["picture_src"]))
 
@@ -129,6 +137,7 @@ def skincare_database_search(query: str) -> str:
     if not docs:
         return "No matching skincare products found."
     enriched = [_enrich_product_doc_with_image(doc.page_content) for doc in docs]
+    enriched = [_resolve_glowagent_product_chunk_text(block) for block in enriched]
     return "\n\n---\n\n".join(enriched)
 
 """### Open Beauty Facts Search Tool"""
@@ -222,6 +231,9 @@ def open_beauty_facts_search(query: str) -> str:
 import os
 import re
 import json
+import urllib.error
+import urllib.parse
+import urllib.request
 from tavily import TavilyClient
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
@@ -466,20 +478,495 @@ def product_ranking_tool(
     if ranked.empty:
         return "No matching products found. Try adjusting filters or product type."
 
-    # Format output for the agent
+    # Format output for the agent (href may be blank — legacy beautyhaul URLs stripped at load)
     lines = []
     for i, (_, row) in enumerate(ranked.iterrows(), 1):
+        href = str(row.get("product_href", "") or "").strip()
+        if href in ("Unknown", "nan") or not href.startswith("http"):
+            href = ""
         block = (
             f"{i}. {row['product_name']} ({row['brand']})\n"
             f"   Category: {row['product_type']} | Effects: {row['notable_effects']}\n"
             f"   Skin types: {row['skin_types_str']}\n"
-            f"   Link: {row['product_href']}"
+            f"   Link: {href}"
         )
         pic = row.get("picture_src", "")
         if pic and str(pic) not in ("Unknown", "nan") and str(pic).startswith("http"):
             block += f"\n   Image: {pic}"
         lines.append(block)
-    return "\n\n".join(lines)
+    text = "\n\n".join(lines)
+    return _resolve_product_ranking_output_text(text)
+
+
+# --- Product links: Tavily search by name, first URL that responds ---
+
+def _is_url_reachable(url: str, timeout: float = 8.0) -> bool:
+    """True if the URL returns a non-client-error response (HEAD then GET)."""
+    if not url or not url.startswith(("http://", "https://")):
+        return False
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    for method in ("HEAD", "GET"):
+        try:
+            req = urllib.request.Request(url, headers=headers, method=method)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.getcode() < 400
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 405, 429):
+                return True
+            if e.code in (404, 410, 451):
+                return False
+            return e.code < 400
+        except (urllib.error.URLError, OSError, TimeoutError, ValueError):
+            continue
+    return False
+
+
+def _guess_product_query_from_url(url: str) -> str:
+    try:
+        path = urllib.parse.urlparse(url).path or ""
+        seg = path.strip("/").split("/")[-1] if path else ""
+        if not seg:
+            return ""
+        q = re.sub(r"[-_]+", " ", seg)
+        q = re.sub(r"\d{5,}", " ", q)
+        return q.strip()[:120]
+    except Exception:
+        return ""
+
+
+def _tavily_result_url_skipped(u: str) -> bool:
+    """Skip hosts that are often dead, geo-locked, or the legacy CSV source."""
+    try:
+        host = urllib.parse.urlparse(u).netloc.lower()
+        path = urllib.parse.urlparse(u).path.lower()
+    except Exception:
+        return True
+    if "beautyhaul.com" in host:
+        return True
+    # Indonesia regional storefronts often 404 or block US users
+    if "innisfree.com" in host and "/id/" in path:
+        return True
+    if host == "shopee.co.id" or host.endswith(".shopee.co.id"):
+        return True
+    if "thebodyshop.co.id" in host:
+        return True
+    skip_hosts = (
+        "youtube.com",
+        "youtu.be",
+        "pinterest.com",
+        "pin.it",
+        "tiktok.com",
+        "facebook.com",
+        "instagram.com",
+        "reddit.com",
+        "quora.com",
+        "twitter.com",
+        "x.com",
+    )
+    if any(h in host for h in skip_hosts):
+        return True
+    return False
+
+
+def _is_bad_catalog_or_geo_host(url: str) -> bool:
+    """Legacy CSV / Indonesia storefronts — replace Link: and Image: targets."""
+    try:
+        host = urllib.parse.urlparse(url).netloc.lower()
+        path = urllib.parse.urlparse(url).path.lower()
+    except Exception:
+        return True
+    if "beautyhaul.com" in host:
+        return True
+    if "innisfree.com" in host and "/id/" in path:
+        return True
+    if host == "shopee.co.id" or host.endswith(".shopee.co.id"):
+        return True
+    if "thebodyshop.co.id" in host:
+        return True
+    return False
+
+
+def _google_image_search(product_label: str) -> str:
+    pl = (product_label or "").strip()
+    if not pl:
+        return "https://www.google.com/search?tbm=isch&q=skincare+product"
+    return (
+        "https://www.google.com/search?tbm=isch&q="
+        + urllib.parse.quote_plus(f"{pl} skincare product")
+    )
+
+
+def _first_working_url_from_tavily(product_label: str) -> Optional[str]:
+    """Tavily search by product name; first result URL that responds and isn't skipped."""
+    q = (product_label or "").strip()
+    if not q:
+        return None
+    queries = (
+        f"{q} buy (site:amazon.com OR site:sephora.com OR site:ulta.com OR site:target.com OR site:walmart.com OR site:iherb.com OR site:yesstyle.com)",
+        f"{q} skincare product buy",
+        f"{q} buy online shop",
+    )
+    for search_query in queries:
+        try:
+            results = tavily_search.invoke({"query": search_query})
+            for r in results.get("results", []) or []:
+                u = (r.get("url") or "").strip()
+                if not u.startswith("http") or _tavily_result_url_skipped(u):
+                    continue
+                if _is_url_reachable(u):
+                    return u
+        except Exception:
+            continue
+    return None
+
+
+def _google_product_search(product_label: str) -> str:
+    pl = (product_label or "").strip()
+    if not pl:
+        return "https://www.google.com/search?q=skincare"
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(f"{pl} skincare buy")
+
+
+def _product_page_url_for_label(product_label: str, fallback_url: str = "") -> str:
+    """First working Tavily hit (US-friendly retailers first), else Google search — never beautyhaul."""
+    fb = (fallback_url or "").strip()
+    if "beautyhaul.com" in fb.lower() or fb.lower() in ("unknown", "nan", ""):
+        fb = ""
+    got = _first_working_url_from_tavily(product_label)
+    if got and "beautyhaul.com" not in got.lower():
+        return got
+    pl = (product_label or "").strip()
+    if pl:
+        return _google_product_search(pl)
+    if fb and "beautyhaul.com" not in fb.lower():
+        return fb
+    return _google_product_search(pl) if pl else "https://www.google.com/search?q=skincare"
+
+
+def _resolve_glowagent_product_chunk_text(chunk: str) -> str:
+    """Set More Info: from Tavily + reachable URL (ignores stale catalog links)."""
+    if "Source: GlowAgent product dataset" not in chunk:
+        return chunk
+    product_name = ""
+    brand = ""
+    lines = chunk.split("\n")
+    out = []
+    for line in lines:
+        if line.startswith("Product:"):
+            product_name = line.replace("Product:", "").strip()
+        elif line.startswith("Brand:"):
+            brand = line.replace("Brand:", "").strip()
+        elif line.startswith("More Info:"):
+            raw = line.replace("More Info:", "").strip()
+            label = f"{brand} {product_name}".strip() if (brand or product_name) else ""
+            fixed = _product_page_url_for_label(label, raw)
+            out.append(f"More Info: {fixed}")
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _resolve_product_ranking_output_text(text: str) -> str:
+    """Set Link: from Tavily + first working URL for each ranked product."""
+    lines = text.split("\n")
+    out = []
+    label = ""
+    for line in lines:
+        m = re.match(r"^\s*\d+\.\s*(.+?)\s*\(([^)]+)\)\s*$", line)
+        if m:
+            pname, br = m.group(1).strip(), m.group(2).strip()
+            label = f"{br} {pname}".strip()
+        stripped = line.strip()
+        if stripped.startswith("Link:"):
+            raw = stripped.split("Link:", 1)[1].strip()
+            fixed = _product_page_url_for_label(label, raw)
+            indent_match = re.match(r"^(\s*)", line)
+            indent = indent_match.group(1) if indent_match else ""
+            out.append(f"{indent}Link: {fixed}")
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+_TITLE_BRAND_PARENS = re.compile(
+    r"^(.+?)\s*\(\s*([^)]+)\s*\)\s*$"
+)
+
+
+def _label_from_title_line(line: str) -> str:
+    """e.g. 'Super Cleanse Daily Clearing Cleanser (GLAMGLOW)' -> 'GLAMGLOW Super Cleanse...'"""
+    t = line.strip().strip("*#_`")
+    m = _TITLE_BRAND_PARENS.match(t)
+    if not m:
+        return ""
+    pname, brand = m.group(1).strip(), m.group(2).strip()
+    if not brand or not pname:
+        return t
+    if pname.lower().startswith(brand.lower() + " "):
+        return pname
+    return f"{brand} {pname}".strip()
+
+
+_METADATA_LINE_HEAD = re.compile(
+    r"^(category|skin types|effects|price|link|image|summary|brand)\s*:",
+    re.I,
+)
+
+
+def _looks_like_product_metadata_line(line: str) -> bool:
+    """Lines from product_ranking_tool / model output between title and Link:."""
+    t = line.strip()
+    if _METADATA_LINE_HEAD.match(t):
+        return True
+    if "|" in t and re.search(r"\b(category|effects)\s*:", t, re.I):
+        return True
+    return False
+
+
+def _infer_product_label_before_url_line(lines: list, idx: int) -> str:
+    """Guess brand + product title from lines above a More Info: / Link: line (LLM-formatted replies)."""
+    skip_prefixes = (
+        "why",
+        "price",
+        "skin type",
+        "more info",
+        "image",
+        "summary",
+        "brand:",
+        "category:",
+        "- ",
+        "•",
+        "here are",
+        "okay,",
+        "these ",
+        "the top",
+    )
+    brand = ""
+    for j in range(idx - 1, max(-1, idx - 60), -1):
+        L = lines[j].strip().strip("*#_`")
+        if not L:
+            continue
+        low = L.lower()
+        if low.startswith("brand:"):
+            brand = L.split(":", 1)[1].strip()
+            for k in range(j - 1, max(-1, j - 15), -1):
+                t = lines[k].strip().strip("*#_`")
+                if not t:
+                    continue
+                tlow = t.lower()
+                if any(tlow.startswith(p) for p in skip_prefixes):
+                    continue
+                if len(t) < 200:
+                    return f"{brand} {t}".strip()
+            return brand
+    for j in range(idx - 1, max(-1, idx - 60), -1):
+        t = lines[j].strip().strip("*#_`")
+        if not t:
+            continue
+        low = t.lower()
+        if any(low.startswith(p) for p in skip_prefixes):
+            continue
+        if len(t) > 200:
+            continue
+        from_paren = _label_from_title_line(t)
+        if from_paren:
+            return from_paren
+        if _looks_like_product_metadata_line(t):
+            continue
+        return t
+    return ""
+
+
+def ensure_no_legacy_catalog_hosts(text: str) -> str:
+    """
+    Final pass: remove any remaining beautyhaul / Indonesia storefront URLs without
+    calling Tavily (so the UI never shows known-dead catalog links even if earlier
+    steps missed a substring).
+    """
+    if not text:
+        return text
+    low = text.lower()
+    if (
+        "beautyhaul.com" not in low
+        and "innisfree.com/id" not in low
+        and "shopee.co.id" not in low
+        and "thebodyshop.co.id" not in low
+    ):
+        return text
+
+    def _google_buy_q(q: str) -> str:
+        qq = (q or "skincare product").strip()[:120]
+        return "https://www.google.com/search?q=" + urllib.parse.quote_plus(f"{qq} buy")
+
+    def _sub_bh(m: re.Match) -> str:
+        u = m.group(0).rstrip(").,;]")
+        path = urllib.parse.urlparse(u).path or ""
+        slug = path.strip("/").split("/")[-1] if path else ""
+        slug = re.sub(r"\.(jpg|jpeg|png|webp|gif)(\?.*)?$", "", slug, flags=re.I)
+        q = re.sub(r"[-_.]+", " ", slug).strip()
+        if not q or len(q) < 2:
+            q = "skincare"
+        return _google_buy_q(q)
+
+    text = re.sub(
+        r"https?://(?:www\.)?beautyhaul\.com[^\s>)\]]+",
+        _sub_bh,
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"https?://(?:www\.)?innisfree\.com/id/[^\s>)\]]+",
+        lambda _: _google_buy_q("Innisfree skincare"),
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"https?://[a-z0-9.-]*shopee\.co\.id[^\s>)\]]+",
+        lambda _: _google_buy_q("skincare product"),
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"https?://(?:www\.)?thebodyshop\.co\.id[^\s>)\]]+",
+        lambda _: _google_buy_q("The Body Shop skincare"),
+        text,
+        flags=re.I,
+    )
+    return text
+
+
+def sanitize_assistant_product_urls(text: str) -> str:
+    """Replace More Info:/Link: URLs using Tavily on the inferred product name (same as tools)."""
+    if not text:
+        return text
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\ufeff", "")
+    text = text.replace("\uff1a", ":")  # fullwidth colon (some models emit Link：)
+    low = text.lower()
+    if "http://" not in low and "https://" not in low:
+        return text
+    lines = text.split("\n")
+    out = []
+    # Optional list / markdown around label; URL on same line
+    url_pat = re.compile(
+        r"^(?P<indent>\s*)(?:[-*]\s+)?(?:\*{0,2})(?P<lbl>More Info:|Link:|Image:)(?:\*{0,2})\s*(?P<url>https?://[^\s>)\]]+)",
+        re.IGNORECASE,
+    )
+    link_only_pat = re.compile(
+        r"^(?P<indent>\s*)(?:[-*]\s+)?(?:\*{0,2})(?P<lbl>More Info:|Link:|Image:)(?:\*{0,2})\s*$",
+        re.IGNORECASE,
+    )
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        line_for_match = line.replace("\\_", "_")
+        m = url_pat.match(line_for_match)
+        if m:
+            url = m.group("url").rstrip(").,;]")
+            label = _infer_product_label_before_url_line(lines, i)
+            if not label.strip():
+                label = _guess_product_query_from_url(url)
+            low_lbl = m.group("lbl").lower()
+            if low_lbl.startswith("image"):
+                fixed = (
+                    _google_image_search(label)
+                    if _is_bad_catalog_or_geo_host(url)
+                    else url
+                )
+            else:
+                fixed = _product_page_url_for_label(label, url)
+            if low_lbl.startswith("more info"):
+                new_lbl = "More Info:"
+            elif low_lbl.startswith("image"):
+                new_lbl = "Image:"
+            else:
+                new_lbl = "Link:"
+            out.append(f"{m.group('indent')}{new_lbl} {fixed}")
+            i += 1
+            continue
+        m2 = link_only_pat.match(line_for_match)
+        if m2 and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt.startswith("http://") or nxt.startswith("https://"):
+                url = nxt.split()[0].rstrip(").,;]")
+                label = _infer_product_label_before_url_line(lines, i)
+                if not label.strip():
+                    label = _guess_product_query_from_url(url)
+                low_lbl = m2.group("lbl").lower()
+                if low_lbl.startswith("image"):
+                    fixed = (
+                        _google_image_search(label)
+                        if _is_bad_catalog_or_geo_host(url)
+                        else url
+                    )
+                else:
+                    fixed = _product_page_url_for_label(label, url)
+                if low_lbl.startswith("more info"):
+                    new_lbl = "More Info:"
+                elif low_lbl.startswith("image"):
+                    new_lbl = "Image:"
+                else:
+                    new_lbl = "Link:"
+                out.append(f"{m2.group('indent')}{new_lbl} {fixed}")
+                i += 2
+                continue
+        out.append(line)
+        i += 1
+    text2 = "\n".join(out)
+    # Any remaining beautyhaul URL (PDP, CDN images, etc.)
+    def _sub_bh(m: re.Match) -> str:
+        u = m.group(0).rstrip(").,;]")
+        q = _guess_product_query_from_url(u)
+        if not q or len(q.strip()) < 3:
+            return _google_product_search("skincare")
+        return _product_page_url_for_label(q, "")
+
+    text2 = re.sub(
+        r"https?://(?:www\.)?beautyhaul\.com[^\s>)\]]+",
+        _sub_bh,
+        text2,
+        flags=re.I,
+    )
+    # Indonesia Innisfree product pages (often geo-blocked for U.S. users)
+    def _sub_inn_id(m: re.Match) -> str:
+        u = m.group(0).rstrip(").,;]")
+        q = _guess_product_query_from_url(u)
+        if q and len(q.strip()) > 5 and "productview" not in q.lower():
+            return _product_page_url_for_label(q, "")
+        return _google_product_search("Innisfree skincare")
+
+    text2 = re.sub(
+        r"https?://(?:www\.)?innisfree\.com/id/[^\s>)\]]+",
+        _sub_inn_id,
+        text2,
+        flags=re.I,
+    )
+    return ensure_no_legacy_catalog_hosts(text2)
+
+
+@tool
+def test_valid_link(link: str, product_name: str = "") -> str:
+    """
+    Look up a fresh product page: searches Tavily for the product name and returns
+    the first result URL that responds. Ignores the catalog link for resolution;
+    pass product_name (brand + product) when possible.
+
+    Returns a single line the model can paste: "Link: https://..."
+    """
+    pq = (product_name or "").strip() or _guess_product_query_from_url((link or "").strip())
+    if not pq:
+        return "Could not derive a product name to search; ask the user for the exact product name."
+    url = _product_page_url_for_label(pq, (link or "").strip() if (link or "").startswith("http") else "")
+    return f"Use this link for the user:\nLink: {url}"
+
+
+
 
 """### Notification tool"""
 
@@ -493,7 +980,7 @@ for U.S.-based users aged 18–24 who want effective, budget-friendly skincare
 recommendations. Your role is to act as a non-diagnostic, educational skincare
 guide that helps users build, evaluate, and optimize their routines.
 
-You have four tools. Use them in this priority order:
+You have five tools. Use them in this priority order:
 
 1. skincare_database_search
    USE FOR: Initial product recommendations, skin-type matching, budget filtering,
@@ -506,15 +993,21 @@ You have four tools. Use them in this priority order:
    + allergies to get products ordered best-to-worst. Use after or instead of
    skincare_database_search when ordering matters.
 
-3. open_beauty_facts_search
+3. test_valid_link
+   USE FOR: Rare manual override. Database tools already set More Info:/Link: via
+   Tavily from the product name. Call with product_name if you need a link for a
+   product you described without using those tools.
+
+4. open_beauty_facts_search
    USE FOR: Verifying full ingredient lists, allergen checks (parabens, fragrance,
    sulfates), products not in the local database, or when a user asks what
    is in a specific named product.
 
-4. tavily_search_tool
+5. tavily_search_tool
    USE FOR: Current prices, trending products, recent reviews, new launches,
    or any information that changes frequently.
-   Use this LAST, or when the first two tools don't have enough information.
+   Use when you need live web data beyond link verification, or when the first
+   tools don't have enough information.
 
 When giving skincare routine recommendations:
 - Organize by step: Cleanser → Treatment → Moisturizer → Sunscreen
@@ -523,16 +1016,26 @@ When giving skincare routine recommendations:
 - Suggest a lower-cost alternative when possible
 - End with a short summary, safety notes, and reassessment timeline (6–8 weeks)
 
-When tools return products from the GlowAgent database, preserve each product's
-Link and Image lines (and "More Info" + Image from skincare_database_search)
-exactly as returned so the chat UI can show thumbnails and clickable product pages.
+The product CSV was originally sourced from beautyhaul.com. Do not paste beautyhaul.com
+URLs in your reply (not for Link:, More Info:, or Image:)—the server strips them, and
+users see broken pages. Tool output is rewritten to U.S.-friendly retailers or Google search;
+copy those lines verbatim. If a tool line has no link yet, describe the product without a URL.
+
+When tools return products, preserve More Info:, Link:, and Image: lines exactly as the tool
+printed them after retrieval—do not substitute catalog URLs from memory.
 
 Keep explanations clear, concise, and educational — not overly clinical.
 """
 
 agent = create_react_agent(
     llm,
-    tools=[skincare_database_search, product_ranking_tool, open_beauty_facts_search, tavily_search_tool],
+    tools=[
+        skincare_database_search,
+        product_ranking_tool,
+        test_valid_link,
+        open_beauty_facts_search,
+        tavily_search_tool,
+    ],
     prompt=multi_tool_prompt,
     checkpointer=checkpointer
 )

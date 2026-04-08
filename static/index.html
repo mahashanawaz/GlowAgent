@@ -280,6 +280,8 @@ input[type=range]{width:100%;accent-color:var(--rose)}
       Sign in to get personalized routines, ingredient checks, and budget picks.
     </p>
     <button
+      id="btn-login"
+      type="button"
       onclick="login()"
       style="
         width: 100%;
@@ -299,6 +301,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
     <p style="font-size: .72rem; color: var(--muted2); margin-top: 16px;">
       Supports Google, email, and more. No credit card required.
     </p>
+    <p id="login-error-hint" style="display:none;font-size:.75rem;color:var(--rose-dark);margin-top:14px;line-height:1.5;"></p>
   </div>
 </div>
 
@@ -509,12 +512,14 @@ input[type=range]{width:100%;accent-color:var(--rose)}
       <div class="page-scroll">
         <div class="section-header">
           <h2>My <em>Routine</em></h2>
-          <p>Your personalized skincare steps. Each step links to your recommended product.</p>
+          <p>Top picks from your profile for each step (cleanser → SPF in the morning; cleanse → treatment at night). Save your profile, then sync.</p>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:20px">
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
           <button class="btn btn-primary btn-sm" id="tab-am" onclick="switchRoutineTab('am')">☀️ AM Routine</button>
           <button class="btn btn-secondary btn-sm" id="tab-pm" onclick="switchRoutineTab('pm')">🌙 PM Routine</button>
+          <button class="btn btn-primary btn-sm" id="btn-routine-sync" onclick="loadRoutineFromProfile({ silent: false })">✨ Fill from profile</button>
         </div>
+        <div id="routine-sync-hint" style="display:none;font-size:.78rem;color:var(--muted);margin-bottom:12px"></div>
         <div id="routine-am-section"><div class="routine-grid" id="routine-am-grid"></div></div>
         <div id="routine-pm-section" style="display:none"><div class="routine-grid" id="routine-pm-grid"></div></div>
         <div class="routine-footer-bar">
@@ -581,43 +586,99 @@ input[type=range]{width:100%;accent-color:var(--rose)}
 
 <script>
 
+/**
+ * Auth0 SPA JS requires window.crypto.subtle, which browsers only expose on "secure" origins.
+ * http://localhost is secure; http://0.0.0.0 is not — sign-in would always fail without a redirect.
+ */
+(function ensureAuth0SecureContext() {
+  if (typeof window === 'undefined') return;
+  var subtle = window.crypto && window.crypto.subtle;
+  if (subtle) return;
+  var h = window.location.hostname;
+  if (h === '0.0.0.0') {
+    var u = new URL(window.location.href);
+    u.hostname = 'localhost';
+    window.location.replace(u.href);
+  }
+})();
+
 // ════ AUTH0 CONFIG — replace these values with yours from auth0.com ════
 const AUTH0_DOMAIN   = 'glowagent.us.auth0.com';   // e.g. glowagent.us.auth0.com
 const AUTH0_CLIENT_ID = '3xrwvbP9b7hMSgBa9aPLyRPw2xLg5wVT';   // from Auth0 dashboard
 const AUTH0_AUDIENCE  = 'https://glowagent-api';      // you'll create this in Step 3
  
 let auth0Client = null;
- 
+/** Resolves when Auth0 client is created (or creation failed). Used so "Sign in" never runs against null. */
+let auth0InitPromise = null;
+
+/**
+ * Auth0 "Allowed Callback URLs" are usually registered as http://localhost:8000/ui — not http://0.0.0.0:8000/ui.
+ * Browsers also handle 0.0.0.0 poorly for OAuth redirects. Map to localhost for the same machine.
+ */
+function getAuth0RedirectBase() {
+  const { protocol, hostname, port } = window.location;
+  // Match typical Auth0 "Allowed Callback URL" entries (localhost, not numeric loopback hosts).
+  let host = hostname;
+  if (hostname === '0.0.0.0' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') {
+    host = 'localhost';
+  }
+  const portPart = port ? ':' + port : '';
+  return protocol + '//' + host + portPart;
+}
+
 // ── Initialize Auth0 on page load ──
 async function initAuth0() {
-  auth0Client = await auth0.createAuth0Client({
-    domain: AUTH0_DOMAIN,
-    clientId: AUTH0_CLIENT_ID,
-    authorizationParams: {
-      redirect_uri: window.location.origin + '/ui',
-      audience: AUTH0_AUDIENCE,
-    },
-    cacheLocation: 'memory',  // keeps user logged in across refreshes
-  });
- 
+  const redirectBase = getAuth0RedirectBase();
+  try {
+    auth0Client = await auth0.createAuth0Client({
+      domain: AUTH0_DOMAIN,
+      clientId: AUTH0_CLIENT_ID,
+      authorizationParams: {
+        redirect_uri: redirectBase + '/ui',
+        audience: AUTH0_AUDIENCE,
+      },
+      cacheLocation: 'memory',
+    });
+  } catch (e) {
+    console.error('Auth0 init failed:', e);
+    showLoginScreen();
+    const hint = document.getElementById('login-error-hint');
+    if (hint) {
+      var msg = (e && e.message) ? String(e.message) : String(e);
+      var extra =
+        ' Open http://localhost:8000/ui (not 0.0.0.0). In Auth0 → Applications → your SPA, add ' +
+        redirectBase +
+        '/ui to Allowed Callback URLs and Allowed Web Origins.';
+      if (msg.indexOf('secure origin') !== -1 || msg.indexOf('crypto') !== -1) {
+        extra =
+          ' This page must be opened at http://localhost:8000/ui so the browser exposes cryptography APIs Auth0 needs.';
+      }
+      hint.textContent = 'Could not start sign-in: ' + msg + extra;
+      hint.style.display = 'block';
+    }
+    return;
+  }
+
   // Handle the redirect back from Auth0 after login
   if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
     try {
       await auth0Client.handleRedirectCallback();
     } catch (e) {
       console.error('Auth callback error:', e);
+      const hint = document.getElementById('login-error-hint');
+      if (hint) {
+        hint.textContent = 'Sign-in callback failed: ' + (e.message || String(e));
+        hint.style.display = 'block';
+      }
     }
-    // Clean up the URL
     window.history.replaceState({}, document.title, window.location.pathname);
   }
- 
+
   const isAuthenticated = await auth0Client.isAuthenticated();
- 
+
   if (!isAuthenticated) {
-    // Not logged in — show login screen, block the app
     showLoginScreen();
   } else {
-    // Logged in — load the app, check profile completion
     const user = await auth0Client.getUser();
     S.currentUser = user;
     hideLoginScreen();
@@ -642,13 +703,53 @@ function hideLoginScreen() {
  
 // ── Login / Logout ──
 async function login() {
-  await auth0Client.loginWithRedirect();
-  // User is redirected away — execution stops here
+  const btn = document.getElementById('btn-login');
+  try {
+    await auth0InitPromise;
+    if (!auth0Client) {
+      pushNotif({
+        type: 'warning',
+        icon: '⚠️',
+        title: 'Sign-in unavailable',
+        msg: 'Authentication did not finish loading. Refresh the page or use http://localhost:8000/ui (not 0.0.0.0) if the problem continues.',
+        toast: true,
+      });
+      return;
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Redirecting…';
+    }
+    await auth0Client.loginWithRedirect();
+  } catch (e) {
+    console.error('login:', e);
+    pushNotif({
+      type: 'warning',
+      icon: '⚠️',
+      title: 'Sign-in failed',
+      msg: (e && e.message) ? e.message : String(e),
+      toast: true,
+    });
+    const hint = document.getElementById('login-error-hint');
+    if (hint) {
+      hint.textContent = (e && e.message) ? e.message : String(e);
+      hint.style.display = 'block';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Sign in / Create account';
+    }
+  }
 }
- 
+
 async function logout() {
+  if (!auth0Client) {
+    await auth0InitPromise;
+  }
+  if (!auth0Client) return;
   await auth0Client.logout({
-    logoutParams: { returnTo: window.location.origin + '/ui' }
+    logoutParams: { returnTo: getAuth0RedirectBase() + '/ui' },
   });
 }
  
@@ -786,7 +887,10 @@ function showPage(id) {
   document.getElementById(id + '-page').classList.add('active');
   document.querySelector(`.nav-item[data-page="${id}"]`).classList.add('active');
   document.getElementById('topbar-title').innerHTML = PAGE_TITLES[id];
-  if (id === 'routine') renderRoutine();
+  if (id === 'routine') {
+    renderRoutine();
+    loadRoutineFromProfile({ silent: true });
+  }
   if (id === 'wishlist') renderWishlist();
 }
 
@@ -853,6 +957,14 @@ function getEndpoint() {
   return document.getElementById('api-url-input').value.trim() || '/chat';
 }
 
+function getRoutineRecommendUrl() {
+  const raw = document.getElementById('api-url-input').value.trim();
+  if (raw.startsWith('http')) {
+    return raw.replace(/\/chat\/?$/i, '') + '/routine/recommend';
+  }
+  return '/routine/recommend';
+}
+
 function buildProfileCtx() {
   const p = S.profile;
   if (!p.name && !p.skinType && !p.concerns) return '';
@@ -874,7 +986,7 @@ function linkifyPlainTextFragment(text) {
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
     const a = document.createElement('a');
-    a.href = m[1];
+    a.href = sanitizeRetailProductLink(m[1]);
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.className = 'agent-inline-link';
@@ -893,13 +1005,54 @@ function stripTrailingJunkFromUrl(u) {
   return s;
 }
 
+function googleProductSearchUrl(query) {
+  return 'https://www.google.com/search?q=' + encodeURIComponent(query);
+}
+function googleImageSearchUrl(query) {
+  return 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(query);
+}
+/** Client-side safety net: legacy CSV / ID storefront links often 404 for U.S. users. */
+function sanitizeRetailProductLink(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return url;
+  const u = stripTrailingJunkFromUrl(url);
+  const low = u.toLowerCase();
+  if (low.includes('beautyhaul.com')) {
+    const m = u.match(/product\/detail\/([^/?#]+)/i);
+    const slug = m ? m[1].replace(/[-_+%]+/g, ' ').replace(/\.[a-z0-9]+$/i, '') : '';
+    return googleProductSearchUrl((slug || 'skincare').trim() + ' buy');
+  }
+  if (low.includes('innisfree.com') && low.includes('/id/')) {
+    return googleProductSearchUrl('Innisfree skincare buy');
+  }
+  if (low.includes('shopee.co.id')) {
+    return googleProductSearchUrl('skincare product buy');
+  }
+  if (low.includes('thebodyshop.co.id')) {
+    return googleProductSearchUrl('The Body Shop skincare buy');
+  }
+  return u;
+}
+function sanitizeRetailImageUrl(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return url;
+  const u = stripTrailingJunkFromUrl(url);
+  const low = u.toLowerCase();
+  if (low.includes('beautyhaul.com') || (low.includes('innisfree.com') && low.includes('/id/')) || low.includes('thebodyshop.co.id')) {
+    const file = (u.split('/').pop() || '').replace(/\.(jpg|png|webp|jpeg)(\?.*)?$/i, '');
+    const q = file.replace(/[-_+%.]+/g, ' ').replace(/^jual\s+/i, '').trim() || 'skincare product';
+    return googleImageSearchUrl(q + ' skincare');
+  }
+  return u;
+}
+
 function parseAgentMessage(text) {
   const lines = text.split('\n');
   const segments = [];
   const buf = [];
   let pendingTitle = null;
-  const LINK_RE = /^\s*(?:\*\*)?\s*(Link|More Info):\s*(https?:\/\/\S+)/i;
-  const IMG_RE = /^\s*(?:\*\*)?\s*Image:\s*(https?:\/\/\S+)/i;
+  // Allow ASCII or fullwidth colon after Link / Image / More Info
+  const COLON = '(?:\\:|\\uFF1A)';
+  const LINK_RE = new RegExp('^\\s*(?:\\*\\*)?\\s*(Link|More Info)' + COLON + '\\s*(https?:\\/\\/\\S+)', 'i');
+  const IMG_RE = new RegExp('^\\s*(?:\\*\\*)?\\s*Image' + COLON + '\\s*(https?:\\/\\/\\S+)', 'i');
   const LOOKAHEAD = 12;
 
   function flushBuf() {
@@ -951,7 +1104,12 @@ function parseAgentMessage(text) {
         }
       }
       flushBuf();
-      segments.push({ type: 'card', url: linkUrl, image: imageUrl, title: pendingTitle || '' });
+      segments.push({
+        type: 'card',
+        url: sanitizeRetailProductLink(linkUrl),
+        image: sanitizeRetailImageUrl(imageUrl),
+        title: pendingTitle || '',
+      });
       pendingTitle = null;
       i = consumed;
       continue;
@@ -974,7 +1132,12 @@ function parseAgentMessage(text) {
       }
       if (linkUrl) {
         flushBuf();
-        segments.push({ type: 'card', url: linkUrl, image: imageUrl, title: pendingTitle || '' });
+        segments.push({
+          type: 'card',
+          url: sanitizeRetailProductLink(linkUrl),
+          image: sanitizeRetailImageUrl(imageUrl),
+          title: pendingTitle || '',
+        });
         pendingTitle = null;
         i = consumed;
         continue;
@@ -990,7 +1153,7 @@ function parseAgentMessage(text) {
 function createProductCard({ url, image, title }) {
   const a = document.createElement('a');
   a.className = 'product-card';
-  a.href = url;
+  a.href = sanitizeRetailProductLink(url);
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
 
@@ -999,7 +1162,7 @@ function createProductCard({ url, image, title }) {
   const hasImg = image && /^https?:\/\//i.test(String(image).trim());
   if (hasImg) {
     const img = document.createElement('img');
-    img.src = image.trim();
+    img.src = sanitizeRetailImageUrl(image.trim());
     img.alt = title || 'Product';
     img.loading = 'lazy';
     img.referrerPolicy = 'no-referrer-when-downgrade';
@@ -1047,6 +1210,8 @@ function appendAgentMessage(text) {
       if (typeof marked !== 'undefined') {
         div.innerHTML = marked.parse(seg.text);
         div.querySelectorAll('a').forEach((el) => {
+          const h = el.getAttribute('href');
+          if (h) el.setAttribute('href', sanitizeRetailProductLink(h));
           el.target = '_blank';
           el.rel = 'noopener noreferrer';
         });
@@ -1175,6 +1340,9 @@ function saveProfile() {
   const s = document.getElementById('save-status');
   s.classList.add('visible'); setTimeout(() => s.classList.remove('visible'), 2500);
   pushNotif({type:'success', icon:'✅', title:'Profile saved!', msg:`Welcome, ${S.profile.name}! Your skin data will personalize every response.`});
+  if (document.getElementById('routine-page') && document.getElementById('routine-page').classList.contains('active')) {
+    loadRoutineFromProfile({ silent: true });
+  }
 }
 
 function updateProfileHeader() {
@@ -1225,20 +1393,102 @@ const STEPS = {
   pm: [{num:1,label:'Step 1',name:'Cleanser',icon:'🧼'},{num:2,label:'Step 2',name:'Exfoliant',icon:'🌿'},{num:3,label:'Step 3',name:'Treatment',icon:'⚗️'},{num:4,label:'Step 4',name:'Moisturizer',icon:'🧴'},{num:5,label:'Step 5',name:'Eye Cream',icon:'👁️'}],
 };
 
-S.routine.am = [
-  {step:'Cleanser',   product:'CeraVe Hydrating Cleanser',         brand:'CeraVe',         price:'$14.99', link:'https://www.cerave.com'},
-  {step:'Toner',      product:null},
-  {step:'Serum',      product:'Niacinamide 10% + Zinc 1%',         brand:'The Ordinary',   price:'$6.70',  link:'https://theordinary.com'},
-  {step:'Moisturizer',product:'CeraVe AM Facial Moisturizing Lotion', brand:'CeraVe',      price:'$19.99', link:'https://www.cerave.com'},
-  {step:'Sunscreen',  product:'Neutrogena Hydro Boost SPF 50',     brand:'Neutrogena',     price:'$17.99', link:'https://www.neutrogena.com'},
-];
-S.routine.pm = [
-  {step:'Cleanser',   product:'La Roche-Posay Toleriane Cleanser', brand:'La Roche-Posay', price:'$15.99', link:'https://www.laroche-posay.us'},
-  {step:'Exfoliant',  product:null},
-  {step:'Treatment',  product:'Retinol 0.2% in Squalane',          brand:'The Ordinary',   price:'$6.80',  link:'https://theordinary.com'},
-  {step:'Moisturizer',product:'CeraVe PM Moisturizing Lotion',     brand:'CeraVe',         price:'$19.99', link:'https://www.cerave.com'},
-  {step:'Eye Cream',  product:null},
-];
+function emptyRoutineSlots() {
+  return {
+    am: STEPS.am.map(s => ({ step: s.name, product: null, brand: null, price: null, link: null, image: null })),
+    pm: STEPS.pm.map(s => ({ step: s.name, product: null, brand: null, price: null, link: null, image: null })),
+  };
+}
+S.routine = emptyRoutineSlots();
+
+let routineSyncInFlight = false;
+
+async function loadRoutineFromProfile(opts = {}) {
+  const hint = document.getElementById('routine-sync-hint');
+  const btn = document.getElementById('btn-routine-sync');
+  const p = S.profile || {};
+  if (!p.skinType && !(p.concerns && p.concerns.length)) {
+    if (!opts.silent) {
+      pushNotif({ type: 'warning', icon: '⚠️', title: 'Profile incomplete', msg: 'Choose a skin type or at least one concern on your profile, then save.' });
+    }
+    if (hint) {
+      hint.style.display = 'block';
+      hint.textContent = 'Add skin type or concerns under Profile and save to enable Fill from profile.';
+    }
+    return false;
+  }
+  try {
+    await auth0InitPromise;
+  } catch (e) {}
+  const token = await getToken();
+  if (!token) {
+    if (!opts.silent) pushNotif({ type: 'warning', icon: '🔐', title: 'Sign in required', msg: 'Log in to load personalized routine picks.' });
+    return false;
+  }
+  if (routineSyncInFlight) return false;
+  routineSyncInFlight = true;
+  if (btn) btn.disabled = true;
+  if (hint) {
+    hint.style.display = 'block';
+    hint.textContent = 'Matching products to your profile…';
+  }
+  const loading = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--muted);font-size:.85rem">Finding top picks for each step…</div>';
+  document.getElementById('routine-am-grid').innerHTML = loading;
+  document.getElementById('routine-pm-grid').innerHTML = loading;
+  try {
+    const res = await fetch(getRoutineRecommendUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        skin_type: p.skinType || '',
+        concerns: p.concerns || [],
+        allergies: p.allergies || [],
+      }),
+    });
+    if (res.status === 401) {
+      showLoginScreen();
+      return false;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const mapSlot = (row) => ({
+      step: row.step,
+      product: row.product || null,
+      brand: row.brand || null,
+      price: row.price || null,
+      link: row.link || null,
+      image: row.image || null,
+    });
+    const mergeByStep = (tabKey, rows) => {
+      const byStep = Object.fromEntries((rows || []).map((r) => [r.step, r]));
+      return STEPS[tabKey].map((s) => {
+        const r = byStep[s.name];
+        return r ? mapSlot(r) : { step: s.name, product: null, brand: null, price: null, link: null, image: null };
+      });
+    };
+    S.routine.am = mergeByStep('am', data.am);
+    S.routine.pm = mergeByStep('pm', data.pm);
+    renderRoutine();
+    if (hint) {
+      hint.textContent = 'Updated from your saved profile. Prices vary by retailer — tap Shop to search.';
+    }
+    if (!opts.silent) {
+      pushNotif({ type: 'success', icon: '✨', title: 'Routine updated', msg: 'Top picks are filled for AM and PM.' });
+    }
+    return true;
+  } catch (e) {
+    if (hint) hint.textContent = 'Could not load picks. Check API URL and try again.';
+    if (!opts.silent) pushNotif({ type: 'warning', icon: '⚠️', title: 'Sync failed', msg: e.message || String(e) });
+    renderRoutine();
+    return false;
+  } finally {
+    routineSyncInFlight = false;
+    if (btn) btn.disabled = false;
+  }
+}
 
 function renderRoutine() {
   ['am','pm'].forEach(tab => {
@@ -1259,7 +1509,7 @@ function renderRoutine() {
                 <div style="flex:1">
                   <div class="product-name-t">${d.product}</div>
                   <div class="product-brand-t">${d.brand||''}</div>
-                  <div class="product-price-t">${d.price||''}${d.link?`<a href="${d.link}" target="_blank" class="product-link">Shop →</a>`:''}</div>
+                  <div class="product-price-t">${d.price||''}${d.link?`<a href="${sanitizeRetailProductLink(d.link)}" target="_blank" rel="noopener noreferrer" class="product-link">Shop →</a>`:''}</div>
                 </div>
               </div>` : `
               <div style="text-align:center;padding:14px;color:var(--muted2);font-size:.78rem;border:1.5px dashed var(--border);border-radius:10px">
@@ -1281,7 +1531,12 @@ function switchRoutineTab(tab) {
 }
 
 function clearRoutine() {
-  ['am','pm'].forEach(tab => S.routine[tab] = STEPS[tab].map(s=>({step:s.name,product:null})));
+  S.routine = emptyRoutineSlots();
+  const hint = document.getElementById('routine-sync-hint');
+  if (hint) {
+    hint.style.display = 'block';
+    hint.textContent = 'Cleared. Use Fill from profile after saving your skin profile.';
+  }
   renderRoutine();
 }
 
@@ -1376,7 +1631,7 @@ function scheduleNotifs() {
 }
 
 // ════ START ════
-initAuth0();
+auth0InitPromise = initAuth0();
 
 </script>
 </body>

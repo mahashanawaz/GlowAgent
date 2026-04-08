@@ -1,5 +1,7 @@
 fastapi
 uvicorn[standard]
+httpx
+python-jose[cryptography]
 langchain-core
 langchain-community
 langchain-google-genai
