@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 import uuid
+import os
+from starlette.requests import Request
 
 load_dotenv()
 
@@ -56,6 +58,17 @@ async def get_me(user: dict = Depends(get_current_user)):
         "name":  user.get("name"),
     }
  
+ # ── Logout endpoint ──
+@app.get("/logout")
+async def logout(request: Request):
+    auth0_domain = os.getenv("AUTH0_DOMAIN")
+    client_id = os.getenv("AUTH0_CLIENT_ID")
+    return_to = "http://localhost:8000/ui"
+    
+    return RedirectResponse(
+        url=f"https://{auth0_domain}/v2/logout?client_id={client_id}&returnTo={return_to}&federated"
+    )
+
 # ── Protected /chat endpoint ──
 @app.post("/chat", response_model=ChatResponse)
 async def chat(

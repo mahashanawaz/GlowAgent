@@ -329,6 +329,20 @@ input[type=range]{width:100%;accent-color:var(--rose)}
         <button class="icon-btn" onclick="toggleNotifPanel()" title="Notifications">
           🔔<span class="notif-dot" id="notif-dot"></span>
         </button>
+        <button onclick="logout()" style="
+          padding: 8px 16px;
+          background: var(--rose);
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          font-family: 'Nunito', sans-serif;
+          font-size: .8rem;
+          font-weight: 700; 
+          cursor: pointer;
+          white-space: nowrap;
+          " title="Sign out">
+          Log out
+        </button>
       </div>
     </div>
 
@@ -583,7 +597,7 @@ async function initAuth0() {
       redirect_uri: window.location.origin + '/ui',
       audience: AUTH0_AUDIENCE,
     },
-    cacheLocation: 'localstorage',  // keeps user logged in across refreshes
+    cacheLocation: 'memory',  // keeps user logged in across refreshes
   });
  
   // Handle the redirect back from Auth0 after login
@@ -633,7 +647,7 @@ async function login() {
 }
  
 async function logout() {
-  auth0Client.logout({
+  await auth0Client.logout({
     logoutParams: { returnTo: window.location.origin + '/ui' }
   });
 }
