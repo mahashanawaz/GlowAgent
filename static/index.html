@@ -320,7 +320,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
     <div class="nav-item" data-page="wishlist"><span class="nav-icon">🛒</span> Wishlist</div>
     <div class="sidebar-footer">
       <div class="api-label">API URL</div>
-      <input id="api-url-input" type="text" placeholder="Default: /chat"/>
+      <input id="api-url-input" type="text" placeholder="Default: /chat (same host as this page; not under /ui/…)"/>
     </div>
   </nav>
 
@@ -578,6 +578,17 @@ input[type=range]{width:100%;accent-color:var(--rose)}
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- WISHLIST PAGE -->
+    <div class="page" id="wishlist-page">
+      <div class="page-scroll">
+        <div class="section-header">
+          <h2>My <em>Wishlist</em></h2>
+          <p>Save products here over time. For now, ask GlowAgent for picks and add favorites from chat.</p>
+        </div>
+        <div class="wishlist-grid" id="wishlist-grid"></div>
       </div>
     </div>
 
@@ -882,11 +893,17 @@ document.querySelectorAll('.nav-item[data-page]').forEach(el =>
 );
 
 function showPage(id) {
+  const pageEl = document.getElementById(id + '-page');
+  if (!pageEl) {
+    console.warn('GlowAgent: missing page', id + '-page');
+    return;
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById(id + '-page').classList.add('active');
-  document.querySelector(`.nav-item[data-page="${id}"]`).classList.add('active');
-  document.getElementById('topbar-title').innerHTML = PAGE_TITLES[id];
+  pageEl.classList.add('active');
+  const nav = document.querySelector(`.nav-item[data-page="${id}"]`);
+  if (nav) nav.classList.add('active');
+  document.getElementById('topbar-title').innerHTML = PAGE_TITLES[id] || id;
   if (id === 'routine') {
     renderRoutine();
     loadRoutineFromProfile({ silent: true });
@@ -957,12 +974,103 @@ function getEndpoint() {
   return document.getElementById('api-url-input').value.trim() || '/chat';
 }
 
-function getRoutineRecommendUrl() {
-  const raw = document.getElementById('api-url-input').value.trim();
-  if (raw.startsWith('http')) {
-    return raw.replace(/\/chat\/?$/i, '') + '/routine/recommend';
+function appendQueryParam(endpoint, key, value) {
+  const ep = (endpoint || '/chat').trim();
+  if (ep.startsWith('http://') || ep.startsWith('https://')) {
+    const u = new URL(ep);
+    u.searchParams.set(key, value);
+    return u.toString();
   }
-  return '/routine/recommend';
+  const sep = ep.includes('?') ? '&' : '?';
+  return ep + sep + encodeURIComponent(key) + '=' + encodeURIComponent(value);
+}
+
+/** Resolve relative API paths to an absolute URL (for error messages). */
+function resolveApiAbsolute(href) {
+  if (!href) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  const path = href.startsWith('/') ? href : '/' + href;
+  try {
+    return new URL(path, window.location.origin).href;
+  } catch (e) {
+    return path;
+  }
+}
+
+/** Map API pathname: strip trailing /chat and /ui, then append suffix (e.g. /fill-routine). */
+function apiPathFromChatEndpoint(ep, suffix) {
+  const suf = suffix.startsWith('/') ? suffix : '/' + suffix;
+  function mapPath(pathname) {
+    let p = pathname.replace(/\/$/, '');
+    if (p.toLowerCase().endsWith('/chat')) p = p.slice(0, -'/chat'.length);
+    if (p.endsWith('/ui')) p = p.slice(0, -'/ui'.length);
+    return (p + suf).replace(/\/+/g, '/');
+  }
+  if (ep.startsWith('http://') || ep.startsWith('https://')) {
+    try {
+      const u = new URL(ep);
+      u.pathname = mapPath(u.pathname);
+      return u.toString();
+    } catch (e) {
+      return (typeof window !== 'undefined' ? window.location.origin : '') + suf;
+    }
+  }
+  let path = ep.startsWith('/') ? ep : '/' + ep;
+  path = mapPath(path);
+  return path.startsWith('/') ? path : '/' + path;
+}
+
+/** Same host/path prefix as chat, but /routine/recommend (fallback when /fill-routine is not an option). */
+function getRoutineRecommendUrl() {
+  return apiPathFromChatEndpoint((getEndpoint() || '/chat').trim(), '/routine/recommend');
+}
+
+/**
+ * Routine sync attempts: (1) same URL as chat + routine_slots query + JSON flags — works if only /chat is deployed.
+ * (2) dedicated fill/recommend paths for newer servers.
+ */
+function collectRoutineFillAttempts(profileBody, threadIdVal) {
+  const ep = (getEndpoint() || '/chat').trim();
+  const seen = new Set();
+  const attempts = [];
+  function add(url, bodyObj) {
+    if (!url) return;
+    const abs = resolveApiAbsolute(url);
+    if (seen.has(abs)) return;
+    seen.add(abs);
+    attempts.push({ url, body: JSON.stringify(bodyObj) });
+  }
+  // Same-origin first — dedicated paths never hit /chat or Gemini.
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    const o = window.location.origin;
+    add(o + '/sync-routine', profileBody);
+    add(o + '/api/sync-routine', profileBody);
+    add(o + '/api/v1/sync-routine', profileBody);
+    add(o + '/v1/sync-routine', profileBody);
+    add(o + '/fill-routine', profileBody);
+    add(o + '/api/fill-routine', profileBody);
+  }
+  const fillUrls = [
+    '/api/fill-routine',
+    '/api/v1/fill-routine',
+    '/fill-routine',
+    '/v1/fill-routine',
+    apiPathFromChatEndpoint(ep, '/fill-routine'),
+    '/api/routine/recommend',
+    '/api/v1/routine/recommend',
+    getRoutineRecommendUrl(),
+    '/v1/routine/recommend',
+  ];
+  for (const u of fillUrls) add(u, profileBody);
+  add(appendQueryParam(ep, 'routine_slots', '1'), {
+    message: '',
+    thread_id: threadIdVal,
+    build_routine_slots: true,
+    profile_skin_type: profileBody.skin_type,
+    profile_concerns: profileBody.concerns,
+    profile_allergies: profileBody.allergies,
+  });
+  return attempts;
 }
 
 function buildProfileCtx() {
@@ -1401,22 +1509,42 @@ function emptyRoutineSlots() {
 }
 S.routine = emptyRoutineSlots();
 
+/** When the API errors (e.g. Gemini 500), still fill the grid with editable sample rows. */
+function applyPlaceholderRoutineSlots(profileBody) {
+  const st = (profileBody && profileBody.skin_type) ? String(profileBody.skin_type).trim() : '';
+  const tag = st ? ` (${st})` : '';
+  const am = [
+    ['Gentle Daily Cleanser', 'SampleCo'],
+    ['Hydrating Prep Toner', 'SampleCo'],
+    ['Vitamin C Glow Serum', 'SampleCo'],
+    ['Oil-Free Gel Moisturizer', 'SampleCo'],
+    ['SPF 50 Sheer Sunscreen', 'SampleCo'],
+  ];
+  const pm = [
+    ['Melting Balm Cleanser', 'SampleCo'],
+    ['Exfoliating Toner (AHA/BHA)', 'SampleCo'],
+    ['Night Repair Serum', 'SampleCo'],
+    ['Rich Night Cream', 'SampleCo'],
+    ['Peptide Eye Cream', 'SampleCo'],
+  ];
+  const row = (stepName, pair) => ({
+    step: stepName,
+    product: pair[0] + tag,
+    brand: pair[1],
+    price: null,
+    link: googleProductSearchUrl(pair[0] + ' ' + pair[1] + ' skincare buy'),
+    image: null,
+  });
+  S.routine.am = STEPS.am.map((s, i) => row(s.name, am[i] || ['Skincare pick', 'SampleCo']));
+  S.routine.pm = STEPS.pm.map((s, i) => row(s.name, pm[i] || ['Skincare pick', 'SampleCo']));
+}
+
 let routineSyncInFlight = false;
 
 async function loadRoutineFromProfile(opts = {}) {
   const hint = document.getElementById('routine-sync-hint');
   const btn = document.getElementById('btn-routine-sync');
   const p = S.profile || {};
-  if (!p.skinType && !(p.concerns && p.concerns.length)) {
-    if (!opts.silent) {
-      pushNotif({ type: 'warning', icon: '⚠️', title: 'Profile incomplete', msg: 'Choose a skin type or at least one concern on your profile, then save.' });
-    }
-    if (hint) {
-      hint.style.display = 'block';
-      hint.textContent = 'Add skin type or concerns under Profile and save to enable Fill from profile.';
-    }
-    return false;
-  }
   try {
     await auth0InitPromise;
   } catch (e) {}
@@ -1430,30 +1558,66 @@ async function loadRoutineFromProfile(opts = {}) {
   if (btn) btn.disabled = true;
   if (hint) {
     hint.style.display = 'block';
-    hint.textContent = 'Matching products to your profile…';
+    hint.textContent = 'Matching products to your saved profile (empty fields count as “any”)…';
   }
   const loading = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--muted);font-size:.85rem">Finding top picks for each step…</div>';
   document.getElementById('routine-am-grid').innerHTML = loading;
   document.getElementById('routine-pm-grid').innerHTML = loading;
   try {
-    const res = await fetch(getRoutineRecommendUrl(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        skin_type: p.skinType || '',
-        concerns: p.concerns || [],
-        allergies: p.allergies || [],
-      }),
-    });
-    if (res.status === 401) {
-      showLoginScreen();
-      return false;
+    const profileBody = {
+      skin_type: p.skinType || '',
+      concerns: p.concerns || [],
+      allergies: p.allergies || [],
+    };
+    const attempts = collectRoutineFillAttempts(profileBody, threadId);
+    let res = null;
+    let triedUrl = '';
+    for (const { url, body } of attempts) {
+      triedUrl = resolveApiAbsolute(url);
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Glow-Sync-Routine': '1',
+        },
+        body,
+      });
+      if (res.status === 401) {
+        showLoginScreen();
+        return false;
+      }
+      if (res.status !== 404) break;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res || res.status === 404) {
+      const chain = attempts.length
+        ? attempts.map((a) => resolveApiAbsolute(a.url)).join(' → ')
+        : '(no URLs)';
+      throw new Error(`HTTP 404: Not Found · Tried: ${chain}`);
+    }
+    if (!res.ok) {
+      applyPlaceholderRoutineSlots(profileBody);
+      renderRoutine();
+      if (hint) {
+        hint.textContent = 'Server error — showing sample products you can edit or replace. Tap Shop to search.';
+      }
+      if (!opts.silent) {
+        pushNotif({
+          type: 'warning',
+          icon: '📋',
+          title: 'Sample routine loaded',
+          msg: 'The server had a problem; we filled example steps so you can keep going.',
+        });
+      }
+      return true;
+    }
     const data = await res.json();
+    if (data.thread_id) {
+      threadId = data.thread_id;
+      localStorage.setItem('glow_thread_id', threadId);
+    }
+    const routinePayload =
+      data.routine && (data.routine.am || data.routine.pm) ? data.routine : data;
     const mapSlot = (row) => ({
       step: row.step,
       product: row.product || null,
@@ -1469,8 +1633,8 @@ async function loadRoutineFromProfile(opts = {}) {
         return r ? mapSlot(r) : { step: s.name, product: null, brand: null, price: null, link: null, image: null };
       });
     };
-    S.routine.am = mergeByStep('am', data.am);
-    S.routine.pm = mergeByStep('pm', data.pm);
+    S.routine.am = mergeByStep('am', routinePayload.am);
+    S.routine.pm = mergeByStep('pm', routinePayload.pm);
     renderRoutine();
     if (hint) {
       hint.textContent = 'Updated from your saved profile. Prices vary by retailer — tap Shop to search.';
@@ -1523,6 +1687,34 @@ function renderRoutine() {
   document.getElementById('routine-total-cost').textContent = total>0 ? `$${total.toFixed(2)}` : '—';
 }
 
+function renderWishlist() {
+  const grid = document.getElementById('wishlist-grid');
+  if (!grid) return;
+  const items = S.wishlist || [];
+  if (!items.length) {
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:40px 16px;color:var(--muted);font-size:.85rem;line-height:1.6">
+        Nothing saved yet.<br/>
+        <span style="color:var(--rose);cursor:pointer;font-weight:600" onclick="goToChat('Recommend skincare products for my profile')">Ask GlowAgent for picks →</span>
+      </div>`;
+    return;
+  }
+  grid.innerHTML = items.map((w) => {
+    const title = w.product || w.name || 'Product';
+    const brand = w.brand ? `<div class="product-brand-t">${w.brand}</div>` : '';
+    const price = w.price ? `<div class="product-price-t">${w.price}</div>` : '';
+    const link = w.link ? `<a href="${sanitizeRetailProductLink(w.link)}" target="_blank" rel="noopener noreferrer" class="product-link">Shop →</a>` : '';
+    return `
+      <div class="routine-step-card" style="min-height:auto">
+        <div class="step-body" style="padding:14px">
+          <div class="product-name-t">${title}</div>
+          ${brand}
+          ${price}${link ? `<div style="margin-top:8px">${link}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
 function switchRoutineTab(tab) {
   document.getElementById('routine-am-section').style.display = tab==='am' ? '' : 'none';
   document.getElementById('routine-pm-section').style.display = tab==='pm' ? '' : 'none';
@@ -1535,7 +1727,7 @@ function clearRoutine() {
   const hint = document.getElementById('routine-sync-hint');
   if (hint) {
     hint.style.display = 'block';
-    hint.textContent = 'Cleared. Use Fill from profile after saving your skin profile.';
+    hint.textContent = 'Cleared. Tap Fill from profile anytime (uses whatever you saved).';
   }
   renderRoutine();
 }

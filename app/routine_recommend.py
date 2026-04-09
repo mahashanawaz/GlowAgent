@@ -1,6 +1,5 @@
 """
-Build AM/PM routine slots from the product dataset + vector retrieval,
-using the same scoring signals as product_ranking_tool (no LLM call).
+Build AM/PM routine slots from the product dataset (pandas scoring only, no LLM or vector DB).
 """
 
 from __future__ import annotations
@@ -9,13 +8,12 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from app.glow_agent import (
+from app.product_rank_score import _score_product_for_ranking
+from app.products_data import products_df
+from app.routine_links import (
     _google_image_search,
     _google_product_search,
     _is_bad_catalog_or_geo_host,
-    _score_product_for_ranking,
-    products_df,
-    vectorstore,
 )
 
 # (step_name, product_type hint for scorer, semantic query boost)
@@ -38,13 +36,24 @@ PM_STEP_SPECS = [
 
 def _allergy_filter(candidates: pd.DataFrame, allergies: list[str]) -> pd.DataFrame:
     out = candidates
+    if out.empty or not allergies:
+        return out
     for term in allergies:
         t = term.strip().lower()
         if not t:
             continue
-        mask = out["product_name"].str.lower().str.contains(t, na=False) | out[
-            "notable_effects"
-        ].str.lower().str.contains(t, na=False)
+        # Literal substring match — regex=False avoids 500 on "(" or "*" in user input.
+        pn = (
+            out["product_name"].str.lower().str.contains(t, na=False, regex=False)
+            if "product_name" in out.columns
+            else False
+        )
+        ne = (
+            out["notable_effects"].str.lower().str.contains(t, na=False, regex=False)
+            if "notable_effects" in out.columns
+            else False
+        )
+        mask = pn | ne
         out = out[~mask]
     return out
 
@@ -54,7 +63,6 @@ def _pick_top_row(
     skin_type: str,
     concerns: str,
     product_type: str,
-    semantic_query: str,
 ) -> Optional[pd.Series]:
     if pool.empty:
         return None
@@ -63,24 +71,7 @@ def _pick_top_row(
         lambda row: _score_product_for_ranking(row, skin_type, concerns, product_type),
         axis=1,
     )
-    if semantic_query.strip():
-        try:
-            docs = vectorstore.similarity_search(semantic_query, k=24)
-            retrieved = set()
-            for doc in docs:
-                for line in doc.page_content.split("\n"):
-                    if line.startswith("Product:"):
-                        n = line.replace("Product:", "").strip()
-                        if n:
-                            retrieved.add(n)
-
-            def boost(row):
-                base = row["_rank_score"]
-                return base + 25 if row["product_name"] in retrieved else base
-
-            scored["_rank_score"] = scored.apply(boost, axis=1)
-        except Exception:
-            pass
+    # Semantic / Chroma boost removed: it pulled in Gemini embeddings and is unused (main always passes use_semantic_boost=False).
     top = scored.nlargest(1, "_rank_score")
     if top.empty:
         return None
@@ -131,7 +122,7 @@ def _fill_steps(
 ) -> list[dict[str, Any]]:
     slots: list[dict[str, Any]] = []
     work = pool.copy()
-    for step_name, pt, query in specs:
+    for step_name, pt, _semantic_hint in specs:
         step_pool = work
         if step_name == "Eye Cream":
             eye_pool = work[
@@ -140,7 +131,12 @@ def _fill_steps(
             if len(eye_pool) >= 2:
                 step_pool = eye_pool
         step_pool = step_pool[~step_pool["product_name"].isin(used_names)]
-        row = _pick_top_row(step_pool, skin_type, concerns_str, pt, query)
+        row = _pick_top_row(
+            step_pool,
+            skin_type,
+            concerns_str,
+            pt,
+        )
         if row is not None:
             pname = str(row.get("product_name", "") or "")
             used_names.add(pname)
@@ -165,7 +161,19 @@ def recommend_routine_from_profile(
     base = _allergy_filter(products_df.copy(), allergy_list)
 
     used: set[str] = set()
-    am_slots = _fill_steps(AM_STEP_SPECS, base, skin_type, concerns_str, used)
-    pm_slots = _fill_steps(PM_STEP_SPECS, base, skin_type, concerns_str, used)
+    am_slots = _fill_steps(
+        AM_STEP_SPECS,
+        base,
+        skin_type,
+        concerns_str,
+        used,
+    )
+    pm_slots = _fill_steps(
+        PM_STEP_SPECS,
+        base,
+        skin_type,
+        concerns_str,
+        used,
+    )
 
     return {"am": am_slots, "pm": pm_slots}

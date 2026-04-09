@@ -26,7 +26,8 @@ load_dotenv()
 from pathlib import Path
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from app.build_vectorstore import load_products_df
+from app.products_data import products_df
+from app.product_rank_score import _score_product_for_ranking
 
 # only load the existing Chroma DB when the app starts up
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,15 +42,6 @@ vectorstore = Chroma(
 )
 
 import pandas as pd
-
-# Local CSV was scraped from beautyhaul.com; those PDPs often 404. Never feed them to the model.
-products_df = load_products_df()
-if "product_href" in products_df.columns:
-    _bh_href = products_df["product_href"].astype(str).str.contains(
-        "beautyhaul", case=False, na=False
-    )
-    products_df = products_df.copy()
-    products_df.loc[_bh_href, "product_href"] = ""
 
 _product_image_by_name = dict(zip(products_df["product_name"], products_df["picture_src"]))
 
@@ -332,76 +324,6 @@ It helps the agent choose the best options (1st, 2nd, 3rd, etc.) when
 presenting recommendations.
 """
 
-# Map user-friendly product terms to dataset product_type values
-PRODUCT_TYPE_ALIASES = {
-    "cleanser": ["Face Wash", "Cleanser"],
-    "face wash": ["Face Wash"],
-    "moisturizer": ["Moisturizer", "Face Cream", "Lotion"],
-    "serum": ["Serum", "Essence"],
-    "sunscreen": ["Sunscreen", "SPF"],
-    "toner": ["Toner"],
-    "treatment": ["Serum", "Treatment"],
-}
-
-def _score_product_for_ranking(row, skin_type: str, concerns: str, product_type_filter: str) -> float:
-    """
-    Score a single product (0-100) based on how well it matches user criteria.
-    Higher score = better match.
-    """
-    score = 0.0
-
-    # 1. Skin type match (products have Sensitive, Combination, Oily, Dry, Normal)
-    if skin_type:
-        skin_lower = skin_type.lower().strip()
-        skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
-        for col in skin_cols:
-            if col.lower() in skin_lower and col in row.index:
-                if row.get(col, 0) == 1:
-                    score += 15  # Strong match for stated skin type
-                break
-        # Also check skintype string column (e.g. "Normal, Dry, Oily")
-        skintype_str = str(row.get("skintype", "")).lower()
-        if skintype_str and any(s in skintype_str for s in skin_lower.split()):
-            score += 10
-
-    # 2. Effects/concerns match (notable_effects: "Acne-Free, Pore-Care, Brightening")
-    if concerns:
-        effects = str(row.get("notable_effects", "")).lower()
-        for concern in concerns.lower().split(","):
-            concern = concern.strip()
-            if not concern:
-                continue
-            # Map common concerns to effect keywords
-            concern_map = {
-                "acne": ["acne", "pore", "purifying", "clarifying"],
-                "pores": ["pore", "pore-care", "refining"],
-                "dryness": ["moisturizing", "hydration", "hydrating", "dry"],
-                "sensitivity": ["soothing", "sensitive", "calming", "gentle"],
-                "dark spots": ["brightening", "hyperpigmentation", "even"],
-                "aging": ["anti-aging", "wrinkle", "firming"],
-                "oil": ["oil-control", "balancing", "matifying"],
-            }
-            keywords = concern_map.get(concern, [concern])
-            if any(kw in effects for kw in keywords):
-                score += 12
-
-    # 3. Product type/category match
-    if product_type_filter:
-        pt_lower = product_type_filter.lower().strip()
-        row_pt = str(row.get("product_type", "")).lower()
-        matched = False
-        for alias, types in PRODUCT_TYPE_ALIASES.items():
-            if alias in pt_lower:
-                if any(t.lower() in row_pt for t in types):
-                    score += 20  # Strong match for category
-                matched = True
-                break
-        if not matched and pt_lower in row_pt:
-            score += 20  # Direct substring match
-
-    # 4. Base relevance
-    return max(0, min(100, score + 5))
-
 @tool
 def product_ranking_tool(
     query: str,
@@ -436,8 +358,8 @@ def product_ranking_tool(
 
     for term in allergy_terms:
         mask = (
-            candidates["product_name"].str.lower().str.contains(term, na=False)
-            | candidates["notable_effects"].str.lower().str.contains(term, na=False)
+            candidates["product_name"].str.lower().str.contains(term, na=False, regex=False)
+            | candidates["notable_effects"].str.lower().str.contains(term, na=False, regex=False)
         )
         candidates = candidates[~mask]
 

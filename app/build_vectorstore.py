@@ -6,11 +6,12 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from dotenv import load_dotenv
 
+from app.products_csv import load_products_df
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ingredients_csv_path = BASE_DIR / "data" / "skincare_ingredients.csv"
-products_csv_path = BASE_DIR / "data" / "skincare_products.csv"
 CHROMA_PERSIST_DIR = BASE_DIR / "chroma_db"
 
 def load_ingredients_df():
@@ -31,36 +32,6 @@ def load_ingredients_df():
             ingredients_df[col] = ingredients_df[col].fillna("Unknown")
 
     return ingredients_df
-
-def load_products_df():
-    products_df = pd.read_csv(products_csv_path)
-    products_df = products_df.dropna(axis=1, how="all")
-
-    product_text_cols = [
-        "product_name",
-        "product_type",
-        "brand",
-        "notable_effects",
-        "skintype",
-        "product_href",
-        "picture_src",
-    ]
-    for col in product_text_cols:
-        if col in products_df.columns:
-            products_df[col] = products_df[col].fillna("Unknown")
-
-    skin_cols = ["Sensitive", "Combination", "Oily", "Dry", "Normal"]
-    for col in skin_cols:
-        if col in products_df.columns:
-            products_df[col] = products_df[col].fillna(0)
-
-    products_df["skin_types_str"] = products_df[skin_cols].apply(
-        lambda row: ", ".join([col for col in skin_cols if row[col] == 1]),
-        axis=1,
-    )
-    products_df["skin_types_str"] = products_df["skin_types_str"].replace("", "Unknown")
-
-    return products_df
 
 def format_ingredient_row(row):
     return (
