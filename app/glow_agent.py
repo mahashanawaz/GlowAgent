@@ -222,7 +222,6 @@ def open_beauty_facts_search(query: str) -> str:
 """### Tavily as general search tool for pricing"""
 import os
 import re
-import json
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -238,11 +237,22 @@ tavily_search = TavilySearch(
     include_raw_content=False
 )
 
+PRICE_RE = re.compile(r"\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?")
+RETAILER_HOST_ORDER = (
+    "ulta.com",
+    "sephora.com",
+    "target.com",
+    "walmart.com",
+    "amazon.com",
+    "cvs.com",
+    "walgreens.com",
+)
+
 def extract_price(text):
     """
     Extracts USD price from text, handles $12, $12.99, $1,299.00 formats.
     """
-    match = re.search(r"\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?", text)
+    match = PRICE_RE.search(text or "")
     return match.group() if match else None
 
 def extract_discount(text):
@@ -251,6 +261,112 @@ def extract_discount(text):
     """
     match = re.search(r"(\d{1,3}%\s?off|Save\s?\$\d+(?:\.\d{2})?)", text, re.IGNORECASE)
     return match.group() if match else None
+
+
+def _tavily_price_queries(product: str) -> list[str]:
+    product = (product or "").strip()
+    retailer_clause = (
+        "(site:ulta.com OR site:sephora.com OR site:target.com OR "
+        "site:walmart.com OR site:amazon.com OR site:cvs.com OR site:walgreens.com)"
+    )
+    return [
+        f'"{product}" price {retailer_clause}',
+        f'"{product}" buy {retailer_clause}',
+        f'"{product}" skincare cost OR MSRP',
+    ]
+
+
+def _retailer_rank(url: str) -> tuple[int, str]:
+    host = urllib.parse.urlparse(url or "").netloc.lower()
+    for idx, known in enumerate(RETAILER_HOST_ORDER):
+        if known in host:
+            return (idx, host)
+    return (len(RETAILER_HOST_ORDER), host)
+
+
+def _normalize_tavily_price_rows(product: str, results: dict) -> tuple[list[dict], list[dict]]:
+    rows: list[dict] = []
+    fallback_links: list[dict] = []
+    seen_urls: set[str] = set()
+
+    answer_blob = results.get("answer") or ""
+    answer_price = extract_price(answer_blob)
+    if answer_price:
+        rows.append({
+            "retailer": "Tavily summary",
+            "title": product,
+            "price": answer_price,
+            "discount": extract_discount(answer_blob),
+            "url": "",
+            "source_text": answer_blob,
+        })
+
+    for r in results.get("results", []):
+        url = r.get("url", "") or ""
+        title = r.get("title", "Unknown Product") or "Unknown Product"
+        content_bits = [
+            r.get("content") or "",
+            r.get("answer") or "",
+            title,
+        ]
+        content = " | ".join(bit for bit in content_bits if bit)
+        price = extract_price(content)
+        discount = extract_discount(content)
+        host = urllib.parse.urlparse(url).netloc.lower() or "Unknown retailer"
+
+        if url and url not in seen_urls:
+            fallback_links.append({
+                "retailer": host,
+                "title": title,
+                "url": url,
+            })
+            seen_urls.add(url)
+
+        if not price:
+            continue
+
+        rows.append({
+            "retailer": host,
+            "title": title,
+            "price": price,
+            "discount": discount,
+            "url": url,
+            "source_text": content,
+        })
+
+    rows.sort(key=lambda row: (_retailer_rank(row.get("url", "")), row["price"]))
+    fallback_links.sort(key=lambda row: _retailer_rank(row.get("url", "")))
+    return rows, fallback_links
+
+
+def _format_tavily_price_output(product: str, price_rows: list[dict], fallback_links: list[dict]) -> str:
+    if price_rows:
+        lines = [f"Live price results for {product}:"]
+        for row in price_rows[:5]:
+            retailer = row.get("retailer") or "Unknown retailer"
+            title = row.get("title") or product
+            price = row.get("price") or "Price unavailable"
+            discount = row.get("discount")
+            line = f"- {retailer}: {title} — {price}"
+            if discount:
+                line += f" ({discount})"
+            if row.get("url"):
+                line += f"\n  URL: {row['url']}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    lines = [
+        f"Live retailer pages found for {product}, but no exact price was visible in the search snippets.",
+        "Use these links as current shopping sources instead of saying the price could not be found:",
+    ]
+    for row in fallback_links[:5]:
+        title = row.get("title") or product
+        retailer = row.get("retailer") or "Unknown retailer"
+        url = row.get("url") or ""
+        lines.append(f"- {retailer}: {title}\n  URL: {url}")
+    if len(fallback_links) == 0:
+        lines.append("- No retailer pages surfaced from Tavily for this query.")
+    return "\n".join(lines)
 
 @tool
 def tavily_search_tool(product: str) -> str:
@@ -271,6 +387,8 @@ def tavily_search_tool(product: str) -> str:
     - "Where can I buy this?"
     - "Is this product available at Sephora or Ulta?"
     - "What are people saying about this product recently?"
+    - If the user asks for current price, cost, or how much a product is,
+      you must call this tool before answering.
 
     Do NOT use this tool as the first choice for ingredient verification
     if the information may already exist in the local database or
@@ -283,32 +401,34 @@ def tavily_search_tool(product: str) -> str:
     Returns: relevant web search results and summaries from recent sources.
     """
 
-    # Focus search on popular online retailers
-    query = f'"{product}" price discount (site:ulta.com OR site:sephora.com OR site:amazon.com OR site:walmart.com OR site:target.com)'
+    product = (product or "").strip()
+    if not product:
+        return "No product name was provided for live price search."
 
-    # Invoke TavilySearch
-    results = tavily_search.invoke({"query": query})
+    all_prices: list[dict] = []
+    fallback_links: list[dict] = []
+    seen_price_keys: set[tuple[str, str, str]] = set()
+    seen_fallback_urls: set[str] = set()
 
-    prices = []
+    for query in _tavily_price_queries(product):
+        results = tavily_search.invoke({"query": query})
+        prices, links = _normalize_tavily_price_rows(product, results)
+        for row in prices:
+            key = (row.get("retailer", ""), row.get("price", ""), row.get("url", ""))
+            if key in seen_price_keys:
+                continue
+            seen_price_keys.add(key)
+            all_prices.append(row)
+        for row in links:
+            url = row.get("url", "")
+            if not url or url in seen_fallback_urls:
+                continue
+            seen_fallback_urls.add(url)
+            fallback_links.append(row)
+        if len(all_prices) >= 3:
+            break
 
-    # Loop through results and extract price/discount
-    for r in results.get("results", []):
-        content = r.get("content") or r.get("answer") or ""
-        price = extract_price(content)
-        discount = extract_discount(content)
-
-        if price:
-            prices.append({
-                "product": r.get("title", "Unknown Product"),
-                "price": price,
-                "discount": discount or "N/A",
-                "url": r.get("url", "N/A")
-            })
-
-    if not prices:
-        return f"No price or discount found for '{product}'."
-
-    return json.dumps(prices, indent=2)
+    return _format_tavily_price_output(product, all_prices, fallback_links)
 
 '''
 # --- Test the tool ---
@@ -907,7 +1027,9 @@ You have five tools. Use them in this priority order:
 1. skincare_database_search
    USE FOR: Initial product recommendations, skin-type matching, budget filtering,
    product categories (cleanser, moisturizer, serum, sunscreen).
-   Always try this tool FIRST.
+   Start with this tool for recommendation and ingredient-adjacent product lookup tasks.
+   Do not use this first when the user is asking for current price, current availability,
+   or other live web information.
 
 2. product_ranking_tool
    USE FOR: Ranking products by relevance when the user wants "best", "top 3",
@@ -928,8 +1050,9 @@ You have five tools. Use them in this priority order:
 5. tavily_search_tool
    USE FOR: Current prices, trending products, recent reviews, new launches,
    or any information that changes frequently.
-   Use when you need live web data beyond link verification, or when the first
-   tools don't have enough information.
+   Use this first when the user asks how much a product costs, what the current
+   price is, where to buy it, or other live web data beyond link verification.
+   If the user asks for price/cost/how much, call this tool before answering.
 
 When giving skincare routine recommendations:
 - Organize by step: Cleanser → Treatment → Moisturizer → Sunscreen

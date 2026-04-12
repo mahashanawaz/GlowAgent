@@ -9,7 +9,7 @@ from urllib.parse import parse_qs
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from starlette.requests import Request
@@ -239,6 +239,12 @@ def _routine_body_from_payload(payload: dict) -> tuple[str, str, list[str], list
 @app.get("/")
 async def root():
     return RedirectResponse(url="/ui")
+
+
+@app.get("/ui")
+async def ui_index():
+    """Serve the SPA without a trailing-slash redirect so OAuth callback URLs stay stable."""
+    return FileResponse("static/index.html")
 
 
 @app.get("/health")

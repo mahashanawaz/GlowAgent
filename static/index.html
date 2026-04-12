@@ -35,11 +35,6 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .nav-item:hover{background:var(--surface2);color:var(--deep)}
 .nav-item.active{background:var(--rose-light);color:var(--rose-dark);font-weight:600}
 .nav-icon{font-size:1rem;width:20px;text-align:center;flex-shrink:0}
-.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1.5px solid var(--border)}
-.api-label{font-size:.65rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
-#api-url-input{width:100%;font-family:'Nunito',sans-serif;font-size:.7rem;color:var(--text);background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:7px 10px;outline:none}
-#api-url-input:focus{border-color:var(--rose)}
-#api-url-input::placeholder{color:var(--muted2)}
 
 /* ── TOPBAR ── */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
@@ -199,31 +194,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
 .routine-total{font-family:'Playfair Display',serif;font-size:1rem;color:var(--deep)}
 .routine-total span{color:var(--rose)}
 
-/* ── SCANNER ── */
-.scanner-layout{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
-.ingredient-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.ingredient-row{padding:10px 12px;background:var(--surface);border-radius:10px;border:1.5px solid var(--border);display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.ing-flag{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
-.ing-flag.safe{background:var(--nc-success)}.ing-flag.caution{background:var(--nc-warning)}.ing-flag.avoid{background:var(--rose)}
-.ing-name{font-size:.82rem;font-weight:600;color:var(--deep);flex:1}
-.ing-tag{font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--sage-light);color:var(--sage)}
-.ing-tag.warn{background:#fdecc8;color:#b07d2e}.ing-tag.alert{background:#fde2df;color:var(--rose-dark)}
-.ing-note{font-size:.72rem;color:var(--muted);width:100%;padding-left:18px}
-
-/* ── WISHLIST ── */
-.wishlist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-.wish-card{background:var(--surface);border-radius:14px;border:1.5px solid var(--border);overflow:hidden;transition:box-shadow .2s,transform .2s}
-.wish-card:hover{box-shadow:0 6px 24px var(--shadow-md);transform:translateY(-2px)}
-.wish-card-top{background:var(--surface2);padding:20px;display:flex;align-items:center;justify-content:center;font-size:2.5rem}
-.wish-card-body{padding:14px}
-.wish-name{font-size:.85rem;font-weight:700;color:var(--deep)}
-.wish-brand{font-size:.75rem;color:var(--muted);margin-top:2px}
-.wish-price{font-family:'Playfair Display',serif;font-size:1rem;color:var(--rose);margin-top:6px}
-.wish-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
-.wish-tag{font-size:.65rem;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--muted);border:1px solid var(--border)}
-.wish-actions{padding:10px 14px;border-top:1.5px solid var(--border);display:flex;gap:8px}
-
-@media(max-width:700px){.profile-grid,.scanner-layout{grid-template-columns:1fr}#sidebar{display:none}.page-scroll{padding:20px 16px}}
+@media(max-width:700px){.profile-grid{grid-template-columns:1fr}#sidebar{display:none}.page-scroll{padding:20px 16px}}
 
 /* Agent reply: markdown + product cards (Link/Image pairs) */
 .msg.agent .bubble.bubble-rich{max-width:100%;display:flex;flex-direction:column;gap:10px;white-space:normal}
@@ -298,8 +269,28 @@ input[type=range]{width:100%;accent-color:var(--rose)}
     >
       Sign in / Create account
     </button>
+    <button
+      id="btn-guest"
+      type="button"
+      onclick="continueAsGuest()"
+      style="
+        width: 100%;
+        padding: 14px;
+        background: transparent;
+        color: var(--deep);
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
+        font-family: 'Nunito', sans-serif;
+        font-size: .95rem;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 10px;
+      "
+    >
+      Continue as guest
+    </button>
     <p style="font-size: .72rem; color: var(--muted2); margin-top: 16px;">
-      Supports Google, email, and more. No credit card required.
+      Supports Google, email, and more. Guest data stays only in this browser session.
     </p>
     <p id="login-error-hint" style="display:none;font-size:.75rem;color:var(--rose-dark);margin-top:14px;line-height:1.5;"></p>
   </div>
@@ -316,12 +307,6 @@ input[type=range]{width:100%;accent-color:var(--rose)}
     <div class="nav-item active" data-page="chat"><span class="nav-icon">💬</span> Chat</div>
     <div class="nav-item" data-page="profile"><span class="nav-icon">👤</span> My Profile</div>
     <div class="nav-item" data-page="routine"><span class="nav-icon">🌿</span> My Routine</div>
-    <div class="nav-item" data-page="scanner"><span class="nav-icon">🔬</span> Ingredient Scanner</div>
-    <div class="nav-item" data-page="wishlist"><span class="nav-icon">🛒</span> Wishlist</div>
-    <div class="sidebar-footer">
-      <div class="api-label">API URL</div>
-      <input id="api-url-input" type="text" placeholder="Default: /chat (same host as this page; not under /ui/…)"/>
-    </div>
   </nav>
 
   <!-- MAIN -->
@@ -332,7 +317,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
         <button class="icon-btn" onclick="toggleNotifPanel()" title="Notifications">
           🔔<span class="notif-dot" id="notif-dot"></span>
         </button>
-        <button onclick="logout()" style="
+        <button id="btn-logout" onclick="logout()" style="
           padding: 8px 16px;
           background: var(--rose);
           color: #fff;
@@ -354,7 +339,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
       <div id="chat-window">
         <div class="empty-state" id="empty-state">
           <div class="es-icon">🌸</div>
-          <h3>Hello, Glow Getter!</h3>
+          <h3 id="chat-greeting">Hello, GlowGetter!</h3>
           <p class="es-desc">Ask me about skincare routines, ingredient checks, budget picks, or upload a skin photo for analysis.</p>
           <div class="suggestion-chips">
             <div class="chip" onclick="sendChip('Best moisturizer for oily skin under $20')">💧 Moisturizer for oily skin</div>
@@ -420,7 +405,9 @@ input[type=range]{width:100%;accent-color:var(--rose)}
                   <div class="tag-pill" data-val="Oily">Oily</div><div class="tag-pill" data-val="Dry">Dry</div>
                   <div class="tag-pill" data-val="Combination">Combination</div><div class="tag-pill" data-val="Sensitive">Sensitive</div><div class="tag-pill" data-val="Normal">Normal</div>
                 </div>
-                <div class="form-hint">Used directly by the product ranking tool's skin_type filter.</div>
+              </div>
+              <div class="form-group"><label class="form-label">Other (comma-separated)</label>
+                <input class="form-input" id="p-skin-type-custom" type="text" placeholder="e.g. dehydrated, acne-prone"/>
               </div>
               <div class="form-group" style="margin-bottom:0"><label class="form-label">Skin Tone</label>
                 <div class="tag-group" id="skin-tone-group">
@@ -442,7 +429,9 @@ input[type=range]{width:100%;accent-color:var(--rose)}
                 <div class="tag-pill" data-val="oil">Oiliness</div><div class="tag-pill" data-val="redness">Redness</div>
                 <div class="tag-pill" data-val="hyperpigmentation">Hyperpigmentation</div><div class="tag-pill" data-val="texture">Texture</div>
               </div>
-              <div class="form-hint">Passed to product_ranking_tool as concerns= comma-separated.</div>
+              <div class="form-group" style="margin-top:14px;margin-bottom:0"><label class="form-label">Other (comma-separated)</label>
+                <input class="form-input" id="p-concerns-custom" type="text" placeholder="e.g. eczema, irritation, dehydration"/>
+              </div>
             </div>
           </div>
           <!-- Allergies -->
@@ -475,7 +464,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
                 <div class="tag-group">
                   <div class="tag-pill selected" id="price-alert-toggle" data-val="on" onclick="togglePriceAlert()">🔔 Enabled</div>
                 </div>
-                <div class="form-hint">Get notified when wishlist products drop in price.</div>
+                <div class="form-hint">Get notified when products you’re watching drop in price.</div>
               </div>
             </div>
           </div>
@@ -512,7 +501,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
       <div class="page-scroll">
         <div class="section-header">
           <h2>My <em>Routine</em></h2>
-          <p>Top picks from your profile for each step (cleanser → SPF in the morning; cleanse → treatment at night). Save your profile, then sync.</p>
+          <p>Top picks from your profile for each step (cleanser → SPF in the morning; cleanse → eye cream at night). Save your profile, then sync.</p>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
           <button class="btn btn-primary btn-sm" id="tab-am" onclick="switchRoutineTab('am')">☀️ AM Routine</button>
@@ -529,66 +518,6 @@ input[type=range]{width:100%;accent-color:var(--rose)}
             <button class="btn btn-primary btn-sm" onclick="goToChat('Build me a personalized skincare routine')">✨ Build with AI</button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- SCANNER PAGE -->
-    <div class="page" id="scanner-page">
-      <div class="page-scroll">
-        <div class="section-header">
-          <h2><em>Ingredient</em> Scanner</h2>
-          <p>Paste a product name to look up via GlowAgent, or paste an ingredient list for instant local analysis.</p>
-        </div>
-        <div class="scanner-layout">
-          <div>
-            <div class="card" style="margin-bottom:16px">
-              <div class="card-header"><h3>🔍 Scan a Product</h3></div>
-              <div class="card-body">
-                <div class="form-group"><label class="form-label">Product Name</label>
-                  <input class="form-input" id="scanner-product" type="text" placeholder="e.g. CeraVe Moisturizing Cream"/>
-                  <div class="form-hint">Will query GlowAgent's ingredient database.</div>
-                </div>
-                <div class="form-group" style="margin-bottom:0"><label class="form-label">Or paste ingredient list</label>
-                  <textarea class="form-textarea" id="scanner-ingredients" placeholder="Aqua, Glycerin, Niacinamide, Cetearyl Alcohol, Retinol…"></textarea>
-                  <div class="form-hint">Analyzed instantly against your allergy list.</div>
-                </div>
-              </div>
-              <div style="padding:0 20px 20px;display:flex;gap:8px">
-                <button class="btn btn-primary" onclick="runScan()">Scan Ingredients</button>
-                <button class="btn btn-secondary" onclick="clearScan()">Clear</button>
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-header"><h3>📋 Legend</h3></div>
-              <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
-                <div style="display:flex;align-items:center;gap:8px;font-size:.8rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--nc-success);display:inline-block"></span><strong>Safe</strong> — generally well-tolerated</div>
-                <div style="display:flex;align-items:center;gap:8px;font-size:.8rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--nc-warning);display:inline-block"></span><strong>Caution</strong> — may irritate sensitive skin</div>
-                <div style="display:flex;align-items:center;gap:8px;font-size:.8rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--rose);display:inline-block"></span><strong>Avoid</strong> — in your allergy list</div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div class="card">
-              <div class="card-header"><h3>🧪 Analysis Results</h3></div>
-              <div class="card-body">
-                <div id="scanner-results" style="min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.85rem">
-                  Results will appear here after scanning.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- WISHLIST PAGE -->
-    <div class="page" id="wishlist-page">
-      <div class="page-scroll">
-        <div class="section-header">
-          <h2>My <em>Wishlist</em></h2>
-          <p>Save products here over time. For now, ask GlowAgent for picks and add favorites from chat.</p>
-        </div>
-        <div class="wishlist-grid" id="wishlist-grid"></div>
       </div>
     </div>
 
@@ -688,14 +617,24 @@ async function initAuth0() {
   const isAuthenticated = await auth0Client.isAuthenticated();
 
   if (!isAuthenticated) {
-    showLoginScreen();
+    if (isGuestMode()) {
+      hideLoginScreen();
+      loadProfile();
+      renderRoutine();
+      scheduleNotifs();
+      checkProfileComplete();
+    } else {
+      showLoginScreen();
+    }
   } else {
+    clearGuestSessionData();
+    updateLogoutButton();
+    threadId = loadThreadId();
     const user = await auth0Client.getUser();
     S.currentUser = user;
     hideLoginScreen();
     loadProfile();
     renderRoutine();
-    renderWishlist();
     scheduleNotifs();
     checkProfileComplete();
   }
@@ -731,6 +670,9 @@ async function login() {
       btn.disabled = true;
       btn.textContent = 'Redirecting…';
     }
+    clearGuestSessionData();
+    setGuestMode(false);
+    threadId = loadThreadId();
     await auth0Client.loginWithRedirect();
   } catch (e) {
     console.error('login:', e);
@@ -754,7 +696,36 @@ async function login() {
   }
 }
 
+function continueAsGuest() {
+  setGuestMode(true);
+  threadId = loadThreadId();
+  hideLoginScreen();
+  loadProfile();
+  renderRoutine();
+  scheduleNotifs();
+  checkProfileComplete();
+  pushNotif({
+    type: 'info',
+    icon: '👋',
+    title: 'Guest mode',
+    msg: 'Your guest data stays only for this session and is cleared when you sign in.',
+  });
+}
+
 async function logout() {
+  if (isGuestMode()) {
+    clearGuestSessionData();
+    setGuestMode(false);
+    S.profile = {};
+    S.routine = emptyRoutineSlots();
+    threadId = null;
+    resetProfileForm();
+    renderRoutine();
+    updateProfileHeader();
+    updateChatGreeting();
+    showLoginScreen();
+    return;
+  }
   if (!auth0Client) {
     await auth0InitPromise;
   }
@@ -766,6 +737,9 @@ async function logout() {
  
 // ── Get JWT token for API requests ──
 async function getToken() {
+  if (isGuestMode()) {
+    return getGuestToken();
+  }
   try {
     return await auth0Client.getTokenSilently();
   } catch (e) {
@@ -815,7 +789,10 @@ async function sendMessage() {
  
   // Get the JWT
   const token = await getToken();
-  if (!token) { typing.remove(); return; }
+  if (!token) {
+    typing.remove();
+    return;
+  }
  
   try {
     const res = await fetch(getEndpoint(), {
@@ -840,7 +817,7 @@ async function sendMessage() {
     const data = await res.json();
     if (data.thread_id) {
       threadId = data.thread_id;
-      localStorage.setItem('glow_thread_id', threadId);
+      saveThreadId(threadId);
     }
  
     typing.remove();
@@ -871,21 +848,89 @@ if (typeof marked !== 'undefined') {
 const S = {
   profile: {},
   routine: { am: [], pm: [] },
-  wishlist: [],
   notifications: [],
   unread: 0,
   attachedImages: [],
 };
 
-let threadId = localStorage.getItem('glow_thread_id') || null;
+const STORAGE_KEYS = {
+  guestMode: 'glow_guest_mode',
+  guestSessionId: 'glow_guest_session_id',
+  profile: 'glow_profile',
+  threadId: 'glow_thread_id',
+};
+
+function isGuestMode() {
+  return sessionStorage.getItem(STORAGE_KEYS.guestMode) === '1';
+}
+
+function setGuestMode(enabled) {
+  if (enabled) {
+    sessionStorage.setItem(STORAGE_KEYS.guestMode, '1');
+  } else {
+    sessionStorage.removeItem(STORAGE_KEYS.guestMode);
+  }
+  updateLogoutButton();
+}
+
+function getAppStorage() {
+  return isGuestMode() ? sessionStorage : localStorage;
+}
+
+function getGuestSessionId() {
+  let value = sessionStorage.getItem(STORAGE_KEYS.guestSessionId);
+  if (value) return value;
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    value = window.crypto.randomUUID();
+  } else {
+    value = 'guest-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+  sessionStorage.setItem(STORAGE_KEYS.guestSessionId, value);
+  return value;
+}
+
+function getGuestToken() {
+  return 'glow-guest:' + getGuestSessionId();
+}
+
+function saveThreadId(value) {
+  const storage = getAppStorage();
+  if (value) {
+    storage.setItem(STORAGE_KEYS.threadId, value);
+  } else {
+    storage.removeItem(STORAGE_KEYS.threadId);
+  }
+}
+
+function loadThreadId() {
+  return getAppStorage().getItem(STORAGE_KEYS.threadId) || null;
+}
+
+function saveProfileState(profile) {
+  getAppStorage().setItem(STORAGE_KEYS.profile, JSON.stringify(profile));
+}
+
+function clearGuestSessionData() {
+  sessionStorage.removeItem(STORAGE_KEYS.guestMode);
+  sessionStorage.removeItem(STORAGE_KEYS.guestSessionId);
+  sessionStorage.removeItem(STORAGE_KEYS.profile);
+  sessionStorage.removeItem(STORAGE_KEYS.threadId);
+}
+
+function updateLogoutButton() {
+  const btn = document.getElementById('btn-logout');
+  if (!btn) return;
+  btn.textContent = isGuestMode() ? 'Exit guest' : 'Log out';
+  btn.title = isGuestMode() ? 'Leave guest mode' : 'Sign out';
+}
+
+let threadId = loadThreadId();
 
 // ════ PAGE TITLES ════
 const PAGE_TITLES = {
   chat:    '<em>Chat</em> with GlowAgent',
   profile: 'My <em>Profile</em>',
   routine: 'My <em>Routine</em>',
-  scanner: '<em>Ingredient</em> Scanner',
-  wishlist:'My <em>Wishlist</em>',
 };
 
 document.querySelectorAll('.nav-item[data-page]').forEach(el =>
@@ -908,7 +953,6 @@ function showPage(id) {
     renderRoutine();
     loadRoutineFromProfile({ silent: true });
   }
-  if (id === 'wishlist') renderWishlist();
 }
 
 function goToChat(msg) {
@@ -971,7 +1015,7 @@ function markAllRead() {
 
 // ════ CHAT ════
 function getEndpoint() {
-  return document.getElementById('api-url-input').value.trim() || '/chat';
+  return '/chat';
 }
 
 function appendQueryParam(endpoint, key, value) {
@@ -1419,6 +1463,12 @@ function getSelectedTags(groupId) {
   return [...document.querySelectorAll(`#${groupId} .tag-pill.selected`)].map(p => p.dataset.val);
 }
 
+function splitCommaInput(inputId) {
+  const el = document.getElementById(inputId);
+  if (!el) return [];
+  return el.value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 function togglePriceAlert() {
   const t = document.getElementById('price-alert-toggle');
   const on = t.dataset.val === 'on';
@@ -1427,15 +1477,38 @@ function togglePriceAlert() {
   t.classList.toggle('selected', !on);
 }
 
+function resetProfileForm() {
+  document.getElementById('p-name').value = '';
+  document.getElementById('p-age').value = '';
+  document.getElementById('p-location').value = '';
+  document.getElementById('p-skin-type-custom').value = '';
+  document.getElementById('p-concerns-custom').value = '';
+  document.getElementById('p-allergy-custom').value = '';
+  document.getElementById('p-budget').value = '30';
+  document.getElementById('budget-display').textContent = '$30 / month';
+  document.getElementById('p-routine-am').value = '';
+  document.getElementById('p-routine-pm').value = '';
+  document.getElementById('p-goals').value = '';
+  document.querySelectorAll('.tag-pill.selected').forEach((pill) => pill.classList.remove('selected'));
+  const priceAlert = document.getElementById('price-alert-toggle');
+  priceAlert.dataset.val = 'on';
+  priceAlert.textContent = '🔔 Enabled';
+  priceAlert.classList.add('selected');
+}
+
 function saveProfile() {
-  const customAllergies = document.getElementById('p-allergy-custom').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const customSkinType = document.getElementById('p-skin-type-custom').value.trim();
+  const customConcerns = splitCommaInput('p-concerns-custom');
+  const customAllergies = splitCommaInput('p-allergy-custom');
+  const displayName = document.getElementById('p-name').value.trim();
+  const selectedSkinType = getSelectedTags('skin-type-group')[0] || '';
   S.profile = {
-    name:      document.getElementById('p-name').value.trim() || 'You',
+    name:      displayName,
     age:       document.getElementById('p-age').value,
     location:  document.getElementById('p-location').value.trim(),
-    skinType:  getSelectedTags('skin-type-group')[0] || '',
+    skinType:  customSkinType || selectedSkinType,
     skinTone:  getSelectedTags('skin-tone-group')[0] || '',
-    concerns:  getSelectedTags('concerns-group'),
+    concerns:  [...getSelectedTags('concerns-group'), ...customConcerns],
     allergies: [...getSelectedTags('allergy-group'), ...customAllergies],
     budget:    document.getElementById('p-budget').value,
     routineAm: document.getElementById('p-routine-am').value,
@@ -1443,7 +1516,7 @@ function saveProfile() {
     goals:     document.getElementById('p-goals').value,
     priceAlert: document.getElementById('price-alert-toggle').dataset.val === 'on',
   };
-  localStorage.setItem('glow_profile', JSON.stringify(S.profile));
+  saveProfileState(S.profile);
   updateProfileHeader();
   const s = document.getElementById('save-status');
   s.classList.add('visible'); setTimeout(() => s.classList.remove('visible'), 2500);
@@ -1464,6 +1537,14 @@ function updateProfileHeader() {
     p.budget && {label:`$${p.budget}/mo`, cls:''},
   ].filter(Boolean);
   document.getElementById('profile-tags-display').innerHTML = items.map(t => `<span class="profile-tag ${t.cls}">${t.label}</span>`).join('');
+  updateChatGreeting();
+}
+
+function updateChatGreeting() {
+  const greeting = document.getElementById('chat-greeting');
+  if (!greeting) return;
+  const name = (S.profile && typeof S.profile.name === 'string') ? S.profile.name.trim() : '';
+  greeting.textContent = `Hello, ${name || 'GlowGetter'}!`;
 }
 
 function injectProfileToChat() {
@@ -1477,8 +1558,13 @@ function injectProfileToChat() {
 
 function loadProfile() {
   try {
-    const saved = localStorage.getItem('glow_profile');
-    if (!saved) return;
+    const saved = getAppStorage().getItem(STORAGE_KEYS.profile);
+    if (!saved) {
+      S.profile = {};
+      resetProfileForm();
+      updateProfileHeader();
+      return;
+    }
     const p = JSON.parse(saved); S.profile = p;
     if (p.name) document.getElementById('p-name').value = p.name;
     if (p.age) document.getElementById('p-age').value = p.age;
@@ -1487,9 +1573,29 @@ function loadProfile() {
     if (p.routineAm) document.getElementById('p-routine-am').value = p.routineAm;
     if (p.routinePm) document.getElementById('p-routine-pm').value = p.routinePm;
     if (p.goals) document.getElementById('p-goals').value = p.goals;
-    if (p.skinType) document.querySelectorAll('#skin-type-group .tag-pill').forEach(pill => { if (pill.dataset.val===p.skinType) pill.classList.add('selected'); });
+    if (p.skinType) {
+      let matchedSkinType = false;
+      document.querySelectorAll('#skin-type-group .tag-pill').forEach(pill => {
+        if (pill.dataset.val===p.skinType) {
+          pill.classList.add('selected');
+          matchedSkinType = true;
+        }
+      });
+      if (!matchedSkinType) document.getElementById('p-skin-type-custom').value = p.skinType;
+    }
     if (p.skinTone) document.querySelectorAll('#skin-tone-group .tag-pill').forEach(pill => { if (pill.dataset.val===p.skinTone) pill.classList.add('selected'); });
-    (p.concerns||[]).forEach(c => document.querySelectorAll('#concerns-group .tag-pill').forEach(pill => { if (pill.dataset.val===c) pill.classList.add('selected'); }));
+    const customConcerns = [];
+    (p.concerns||[]).forEach(c => {
+      let matchedConcern = false;
+      document.querySelectorAll('#concerns-group .tag-pill').forEach(pill => {
+        if (pill.dataset.val===c) {
+          pill.classList.add('selected');
+          matchedConcern = true;
+        }
+      });
+      if (!matchedConcern) customConcerns.push(c);
+    });
+    if (customConcerns.length) document.getElementById('p-concerns-custom').value = customConcerns.join(', ');
     (p.allergies||[]).forEach(a => { const pill = document.querySelector(`#allergy-group .tag-pill[data-val="${a}"]`); if (pill) pill.classList.add('selected'); });
     updateProfileHeader();
   } catch(e) {}
@@ -1549,7 +1655,7 @@ async function loadRoutineFromProfile(opts = {}) {
     await auth0InitPromise;
   } catch (e) {}
   const token = await getToken();
-  if (!token) {
+  if (!token && !isGuestMode()) {
     if (!opts.silent) pushNotif({ type: 'warning', icon: '🔐', title: 'Sign in required', msg: 'Log in to load personalized routine picks.' });
     return false;
   }
@@ -1614,7 +1720,7 @@ async function loadRoutineFromProfile(opts = {}) {
     const data = await res.json();
     if (data.thread_id) {
       threadId = data.thread_id;
-      localStorage.setItem('glow_thread_id', threadId);
+      saveThreadId(threadId);
     }
     const routinePayload =
       data.routine && (data.routine.am || data.routine.pm) ? data.routine : data;
@@ -1644,7 +1750,7 @@ async function loadRoutineFromProfile(opts = {}) {
     }
     return true;
   } catch (e) {
-    if (hint) hint.textContent = 'Could not load picks. Check API URL and try again.';
+    if (hint) hint.textContent = 'Could not load picks. Try again in a moment.';
     if (!opts.silent) pushNotif({ type: 'warning', icon: '⚠️', title: 'Sync failed', msg: e.message || String(e) });
     renderRoutine();
     return false;
@@ -1687,34 +1793,6 @@ function renderRoutine() {
   document.getElementById('routine-total-cost').textContent = total>0 ? `$${total.toFixed(2)}` : '—';
 }
 
-function renderWishlist() {
-  const grid = document.getElementById('wishlist-grid');
-  if (!grid) return;
-  const items = S.wishlist || [];
-  if (!items.length) {
-    grid.innerHTML = `
-      <div style="grid-column:1/-1;text-align:center;padding:40px 16px;color:var(--muted);font-size:.85rem;line-height:1.6">
-        Nothing saved yet.<br/>
-        <span style="color:var(--rose);cursor:pointer;font-weight:600" onclick="goToChat('Recommend skincare products for my profile')">Ask GlowAgent for picks →</span>
-      </div>`;
-    return;
-  }
-  grid.innerHTML = items.map((w) => {
-    const title = w.product || w.name || 'Product';
-    const brand = w.brand ? `<div class="product-brand-t">${w.brand}</div>` : '';
-    const price = w.price ? `<div class="product-price-t">${w.price}</div>` : '';
-    const link = w.link ? `<a href="${sanitizeRetailProductLink(w.link)}" target="_blank" rel="noopener noreferrer" class="product-link">Shop →</a>` : '';
-    return `
-      <div class="routine-step-card" style="min-height:auto">
-        <div class="step-body" style="padding:14px">
-          <div class="product-name-t">${title}</div>
-          ${brand}
-          ${price}${link ? `<div style="margin-top:8px">${link}</div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-}
-
 function switchRoutineTab(tab) {
   document.getElementById('routine-am-section').style.display = tab==='am' ? '' : 'none';
   document.getElementById('routine-pm-section').style.display = tab==='pm' ? '' : 'none';
@@ -1730,87 +1808,6 @@ function clearRoutine() {
     hint.textContent = 'Cleared. Tap Fill from profile anytime (uses whatever you saved).';
   }
   renderRoutine();
-}
-
-// ════ INGREDIENT SCANNER ════
-const KNOWN_INGS = {
-  'glycerin':             {flag:'safe',    tag:'Humectant', note:'Draws moisture into skin. Excellent for all types.'},
-  'aqua':                 {flag:'safe',    tag:'Base',      note:'Water — base carrier for all ingredients.'},
-  'niacinamide':          {flag:'safe',    tag:'Brightener',note:'Reduces pores and dark spots. May conflict with Vitamin C.'},
-  'cetearyl alcohol':     {flag:'safe',    tag:'Emollient', note:'Fatty alcohol — moisturizing, not irritating.'},
-  'hyaluronic acid':      {flag:'safe',    tag:'Humectant', note:'Binds moisture. Great for all skin types.'},
-  'salicylic acid':       {flag:'caution', tag:'BHA',       note:'Effective for acne, can irritate sensitive skin.'},
-  'retinol':              {flag:'caution', tag:'Retinoid',  note:'Anti-aging but start slowly. Avoid during pregnancy.'},
-  'fragrance':            {flag:'avoid',   tag:'Irritant',  note:'Common allergen. In your allergy list.'},
-  'parfum':               {flag:'avoid',   tag:'Irritant',  note:'Same as fragrance. High irritation potential.'},
-  'alcohol denat':        {flag:'caution', tag:'Drying',    note:'Can strip skin barrier. Avoid for dry/sensitive.'},
-  'parabens':             {flag:'avoid',   tag:'Preservative',note:'In your allergy list.'},
-  'sodium lauryl sulfate':{flag:'caution', tag:'Surfactant',note:'Strong cleanser; can disrupt the skin barrier.'},
-  'titanium dioxide':     {flag:'safe',    tag:'SPF',       note:'Mineral UV filter. Safe for sensitive skin.'},
-  'zinc oxide':           {flag:'safe',    tag:'SPF',       note:'Gentle mineral sunscreen. Great for acne-prone.'},
-  'ceramides':            {flag:'safe',    tag:'Barrier',   note:'Restores and strengthens the skin barrier.'},
-  'benzoyl peroxide':     {flag:'caution', tag:'Acne',      note:'Effective but drying. Use sparingly.'},
-  'lactic acid':          {flag:'caution', tag:'AHA',       note:'Gentle exfoliant. Avoid with very sensitive skin.'},
-  'mica':                 {flag:'safe',    tag:'Mineral',   note:'Natural mineral. Generally very safe.'},
-  'peptides':             {flag:'safe',    tag:'Anti-aging',note:'Stimulates collagen. Suitable for all skin types.'},
-};
-
-async function runScan() {
-  const prod = document.getElementById('scanner-product').value.trim();
-  const ings = document.getElementById('scanner-ingredients').value.trim();
-  const res  = document.getElementById('scanner-results');
-  if (!prod && !ings) { pushNotif({type:'warning',icon:'⚠️',title:'Nothing to scan',msg:'Enter a product name or paste an ingredient list.'}); return; }
-  res.innerHTML = '<div style="display:flex;gap:8px;align-items:center;color:var(--muted);font-size:.85rem"><div class="dot"></div><div class="dot"></div><div class="dot"></div>&nbsp;Analyzing…</div>';
-  if (prod && !ings) {
-    try {
-      const r = await fetch(getEndpoint(), {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          message: `${buildProfileCtx()}What ingredients are in "${prod}"? Flag any that could be problematic for my skin type and allergy list.`,
-          thread_id: threadId
-          })
-        });
-
-      const data = await r.json();
-      if (data.thread_id) {
-      threadId = data.thread_id;
-      localStorage.setItem('glow_thread_id', threadId);
-      }
-
-      res.innerHTML = `<div style="font-size:.83rem;line-height:1.8;white-space:pre-wrap;color:var(--text)">${data.response||'No data returned.'}</div>`;
-    } catch(e) { res.innerHTML = `<div style="color:var(--rose);font-size:.83rem">⚠️ ${e.message}</div>`; }
-    return;
-  }
-  const userAllergies = (S.profile.allergies||[]).map(a=>a.toLowerCase());
-  const items = ings.split(/[,\n]/).map(s=>s.trim().toLowerCase()).filter(Boolean);
-  const found = items.map(item => {
-    const info = KNOWN_INGS[item];
-    let flag='safe', tag='Ingredient', note='No specific flags found.';
-    if (info) { flag=info.flag; tag=info.tag; note=info.note; }
-    if (userAllergies.some(a => item.includes(a)||a.includes(item))) { flag='avoid'; note='⚠️ Matches your allergy/avoid list from profile.'; }
-    const display = item.split(' ').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ');
-    return {name:display, flag, tag, note};
-  });
-  const avoidCount = found.filter(f=>f.flag==='avoid').length;
-  if (avoidCount > 0) pushNotif({type:'warning',icon:'⚠️',title:`${avoidCount} flagged ingredient${avoidCount>1?'s':''}!`,msg:'Some ingredients match your profile allergy list. Review results.'});
-  res.innerHTML = `
-    <div style="margin-bottom:10px;font-size:.78rem;color:var(--muted)">${found.length} ingredients analyzed</div>
-    <div class="ingredient-list">
-      ${found.map(f=>`
-        <div class="ingredient-row">
-          <span class="ing-flag ${f.flag}"></span>
-          <div style="flex:1"><div class="ing-name">${f.name}</div></div>
-          <span class="ing-tag ${f.flag==='caution'?'warn':f.flag==='avoid'?'alert':''}">${f.tag}</span>
-          <div class="ing-note">${f.note}</div>
-        </div>`).join('')}
-    </div>`;
-}
-
-function clearScan() {
-  document.getElementById('scanner-product').value = '';
-  document.getElementById('scanner-ingredients').value = '';
-  document.getElementById('scanner-results').innerHTML = 'Results will appear here after scanning.';
 }
 
 // ════ SCHEDULED NOTIFICATIONS ════
