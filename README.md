@@ -1,6 +1,8 @@
 # GlowAgent 
 
-**GlowAgent** is an AI-powered skincare recommendation assistant built for U.S.-based users aged 18–24 who want effective, budget-conscious skincare routines without hours of research. It combines a local product/ingredient database, real-time web search, and a multi-tool LangGraph agent to deliver personalized recommendations through a clean web UI.
+**GlowAgent** is an AI-powered skincare recommendation assistant built for U.S.-based users aged 18–24 who want effective, budget-conscious skincare routines without hours of research. It uses a tool-augmented agent + RAG to deliver personalized routines, product comparisons, ingredient checks, and price insights.
+
+**Frontend:** a responsive **single-page web UI** (`static/index.html`) served directly by **FastAPI** at `/ui`.
 
 ---
 
@@ -17,17 +19,33 @@
 
 ---
 
+## Frontend (actual setup)
+
+The UI lives in:
+
+- `static/index.html` (HTML + CSS + vanilla JS)
+
+It includes:
+- **Auth0 SPA login** (via Auth0 SPA JS)
+- A **Guest mode** (stores data only for the session)
+- Profile/routine pages (stored in browser storage)
+- Calls the backend via `fetch()` to `POST /chat`, attaching an `Authorization: Bearer <token>` header (Auth0 JWT or guest token)
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
+| API | FastAPI + Uvicorn |
+| Agent Framework | LangGraph (`create_react_agent`) |
 | LLM | Google Gemini 2.0 Flash (`gemini-2.0-flash`) |
 | Embeddings | Google Gemini Embeddings (`gemini-embedding-001`) |
 | Vector Store | ChromaDB (persisted locally at `chroma_db/`) |
-| Agent Framework | LangGraph (`create_react_agent`) |
-| Web Framework | FastAPI + Uvicorn |
 | Web Search | Tavily API |
-| Ingredient DB | Open Beauty Facts API (no key required) |
+| Ingredient DB | Open Beauty Facts API |
+| Frontend | Static HTML/CSS/JS served by FastAPI (`/ui`) |
+| Auth (UI) | Auth0 SPA JS (optional; guest mode supported) |
 | Data | Pandas (CSV-based product & ingredient datasets) |
 
 ---
@@ -68,10 +86,11 @@ GlowAgent/
 - A **Google AI API key** (for Gemini LLM + embeddings) — [Get one here](https://aistudio.google.com/app/apikey)
 - A **Tavily API key** (for live price search) — [Get one here](https://app.tavily.com)
 - A **PerfectCorp API key** (for photo-based visible skin concern analysis)
+- - **Auth0** (optional; UI supports guest mode if you don’t configure Auth0)
 
 ---
 
-## Installation
+## Setup
 
 ### 1. Clone the repository
 
