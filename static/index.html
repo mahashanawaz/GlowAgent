@@ -362,7 +362,7 @@ input[type=range]{width:100%;accent-color:var(--rose)}
             </button>
           </div>
         </div>
-        <input type="file" id="img-file-input" accept="image/*" multiple/>
+        <input type="file" id="img-file-input" accept="image/*"/>
         <div style="font-size:.68rem;color:var(--muted2);margin-top:6px;text-align:center">
           📷 Attach a photo of your skin condition — GlowAgent will analyze it and suggest products.
         </div>
@@ -785,7 +785,7 @@ async function sendMessage() {
   document.getElementById('send-btn').disabled = true;
   const typing = showTyping();
  
-  const fullMsg = buildProfileCtx() + (text || 'I have uploaded a photo of my skin. Please analyze it and provide skincare recommendations.');
+  const fullMsg = buildProfileCtx() + text;
  
   // Get the JWT
   const token = await getToken();
@@ -804,6 +804,14 @@ async function sendMessage() {
       body: JSON.stringify({
         message: fullMsg,
         thread_id: threadId,
+        image: imgs[0]
+          ? {
+              data_url: imgs[0].dataUrl,
+              content_type: imgs[0].contentType,
+              file_name: imgs[0].fileName,
+              file_size: imgs[0].fileSize,
+            }
+          : null,
       }),
     });
  
@@ -813,7 +821,18 @@ async function sendMessage() {
       return;
     }
  
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    if (!res.ok) {
+      let errorMsg = `HTTP ${res.status}: ${res.statusText}`;
+      try {
+        const errData = await res.json();
+        if (errData && typeof errData.detail === 'string' && errData.detail.trim()) {
+          errorMsg = errData.detail.trim();
+        } else if (errData && typeof errData.error === 'string' && errData.error.trim()) {
+          errorMsg = errData.error.trim();
+        }
+      } catch (parseErr) {}
+      throw new Error(errorMsg);
+    }
     const data = await res.json();
     if (data.thread_id) {
       threadId = data.thread_id;
@@ -1410,15 +1429,85 @@ function showTyping() {
 
 function sendChip(msg) { document.getElementById('msg-input').value = msg; sendMessage(); }
 
+async function resizeImageForSkinAnalysis(file) {
+  const sourceDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Could not read image file.'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('Could not load image preview.'));
+    el.src = sourceDataUrl;
+  });
+
+  const maxLongSide = 4096;
+  const minShortSide = 480;
+  let width = img.width;
+  let height = img.height;
+  let shortSide = Math.min(width, height);
+  let longSide = Math.max(width, height);
+
+  if (shortSide < minShortSide) {
+    const scaleUp = minShortSide / shortSide;
+    width = Math.round(width * scaleUp);
+    height = Math.round(height * scaleUp);
+  }
+
+  longSide = Math.max(width, height);
+  if (longSide > maxLongSide) {
+    const scaleDown = maxLongSide / longSide;
+    width = Math.round(width * scaleDown);
+    height = Math.round(height * scaleDown);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const outputType = /^image\/(png|webp|jpeg)$/.test(file.type) ? file.type : 'image/jpeg';
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, 0.92));
+  if (!blob) throw new Error('Could not prepare the image for analysis.');
+
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Could not encode image.'));
+    reader.readAsDataURL(blob);
+  });
+
+  return {
+    fileName: file.name || 'skin-analysis.jpg',
+    contentType: blob.type || outputType,
+    fileSize: blob.size,
+    dataUrl,
+  };
+}
+
 // Image attachment
 document.getElementById('img-attach-btn').addEventListener('click', () => document.getElementById('img-file-input').click());
-document.getElementById('img-file-input').addEventListener('change', e => {
-  [...e.target.files].forEach(file => {
-    const r = new FileReader();
-    r.onload = ev => { S.attachedImages.push({file, dataUrl:ev.target.result}); renderImagePreviews(); };
-    r.readAsDataURL(file);
-  });
-  e.target.value = '';
+document.getElementById('img-file-input').addEventListener('change', async e => {
+  try {
+    for (const file of [...e.target.files]) {
+      const processed = await resizeImageForSkinAnalysis(file);
+      S.attachedImages.push(processed);
+    }
+    renderImagePreviews();
+  } catch (err) {
+    pushNotif({
+      type: 'warning',
+      icon: '⚠️',
+      title: 'Image upload failed',
+      msg: err && err.message ? err.message : String(err),
+    });
+  } finally {
+    e.target.value = '';
+  }
 });
 
 function renderImagePreviews() {

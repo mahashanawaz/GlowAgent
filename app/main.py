@@ -16,6 +16,7 @@ from starlette.requests import Request
 
 from app.auth import get_current_user, get_user_id
 from app.routine_recommend import recommend_routine_from_profile
+from app.skin_analysis import analyze_skin_image, concerns_for_agent, summarize_skin_analysis
 
 load_dotenv()
 
@@ -236,6 +237,20 @@ def _routine_body_from_payload(payload: dict) -> tuple[str, str, list[str], list
     return raw_thread, skin, concerns, allergies
 
 
+def _thread_id_from_payload(payload: dict) -> str:
+    tid = payload.get("thread_id")
+    if tid is not None and str(tid).strip():
+        return str(tid).strip()
+    return str(uuid.uuid4())
+
+
+def _image_payload_from_payload(payload: dict) -> Optional[dict]:
+    image = payload.get("image")
+    if isinstance(image, dict) and image:
+        return image
+    return None
+
+
 @app.get("/")
 async def root():
     return RedirectResponse(url="/ui")
@@ -379,6 +394,8 @@ async def chat(
         if not isinstance(payload, dict):
             payload = {}
 
+        image_payload = _image_payload_from_payload(payload)
+
         force_routine = _force_routine_from_request(payload, raw_request)
         # Routine sync: query, header, or build_routine_slots — never call LangGraph (ignore draft message).
         if force_routine:
@@ -402,8 +419,38 @@ async def chat(
 
         body = ChatRequest.model_validate(payload)
 
-        raw_thread = body.thread_id or str(uuid.uuid4())
+        raw_thread = body.thread_id or _thread_id_from_payload(payload)
         message_val = _strip_chat_message_text(payload.get("message", body.message))
+
+        if image_payload:
+            analysis_results = await analyze_skin_image(image_payload)
+            visible_concerns = concerns_for_agent(analysis_results)
+            summary_text = summarize_skin_analysis(analysis_results)
+            agent_prompt = "\n".join(
+                [
+                    "I uploaded a skin photo for visible concern analysis.",
+                    (
+                        "Visible concerns inferred from the photo: "
+                        + (", ".join(visible_concerns) if visible_concerns else "none strongly visible")
+                        + "."
+                    ),
+                    "This is not a diagnosis. Please keep the explanation non-diagnostic and image-based.",
+                    "Briefly summarize the visible concerns, then recommend skincare products or routine steps that fit them.",
+                    (
+                        "Also address this user request if relevant: "
+                        + message_val
+                        if message_val
+                        else "If there is no extra user request, proactively suggest helpful products or routine steps."
+                    ),
+                ]
+            )
+            from app.chat_llm import invoke_chat_llm
+
+            recommendation_text = invoke_chat_llm(agent_prompt, user_id, raw_thread)
+            return ChatResponse(
+                response=summary_text + "\n\n" + recommendation_text,
+                thread_id=raw_thread,
+            )
 
         payload_wants_routine = _truthy_json_flag(
             payload.get("build_routine_slots"),

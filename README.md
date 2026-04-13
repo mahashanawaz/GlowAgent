@@ -10,6 +10,7 @@
 - **Product Recommendations** — Searches and ranks products from a curated local database
 - **Ingredient Lookup** — Verifies full INCI ingredient lists and allergen flags via Open Beauty Facts
 - **Live Price Search** — Fetches current prices from Ulta, Sephora, Amazon, Walmart, and Target via Tavily
+- **Photo-Based Visible Concern Analysis** — Upload a skin photo in chat to infer visible concerns through the PerfectCorp YouCam Skin Analysis API
 - **Product Ranking** — Scores and orders products by relevance to the user's skin type, concerns, and category
 - **Conversational Memory** — Maintains per-session context using LangGraph's `InMemorySaver`
 - **Web UI** — Served directly from FastAPI via `static/index.html`
@@ -66,6 +67,7 @@ GlowAgent/
 - Python 3.10+
 - A **Google AI API key** (for Gemini LLM + embeddings) — [Get one here](https://aistudio.google.com/app/apikey)
 - A **Tavily API key** (for live price search) — [Get one here](https://app.tavily.com)
+- A **PerfectCorp API key** (for photo-based visible skin concern analysis)
 
 ---
 
@@ -99,6 +101,7 @@ Create a `.env` file in the project root:
 ```env
 GOOGLE_API_KEY=your_google_ai_api_key_here
 TAVILY_API_KEY=your_tavily_api_key_here
+PERFECTCORP_API_KEY=your_perfectcorp_api_key_here
 ```
 
 ### 5. Build the vector store
@@ -211,6 +214,7 @@ See `evals/README.md` for instructions on running evaluations.
 |---|---|---|
 | `GOOGLE_API_KEY` | ✅ Yes | Powers Gemini 2.0 Flash (LLM) and Gemini Embeddings |
 | `TAVILY_API_KEY` | ✅ Yes | Powers live web price search via Tavily |
+| `PERFECTCORP_API_KEY` | For photo analysis | Powers PerfectCorp YouCam skin concern inference for uploaded chat images |
 
 ---
 
