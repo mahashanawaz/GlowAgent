@@ -294,7 +294,6 @@ chat_router = APIRouter(tags=["chat"])
 @chat_router.post("/fill-routine", response_model=ChatResponse)
 async def fill_routine_from_profile(
     body: RoutineRecommendRequest,
-    _user_id: str = Depends(get_user_id),
 ):
     """
     Ranked AM/PM routine slots from the product DB only. Does not call LangGraph or Gemini.
@@ -316,7 +315,6 @@ async def fill_routine_from_profile(
 @chat_router.post("/sync-routine", response_model=ChatResponse)
 async def sync_routine_endpoint(
     body: RoutineRecommendRequest,
-    _user_id: str = Depends(get_user_id),
 ):
     """Dedicated routine sync — same as /fill-routine; use this from the UI (no /chat)."""
     raw_thread = str(uuid.uuid4())
@@ -537,7 +535,6 @@ routine_router = APIRouter(tags=["routine"])
 @routine_router.post("/routine/recommend", response_model=RoutineRecommendResponse)
 async def routine_recommend_endpoint(
     body: RoutineRecommendRequest,
-    _user_id: str = Depends(get_user_id),
 ):
     """Top database pick per AM/PM routine step from skin type, concerns, and allergies."""
     return _build_routine_response(body)

@@ -871,6 +871,7 @@ async function sendMessage() {
     const data = await res.json();
     if (data.thread_id) { threadId = data.thread_id; saveThreadId(threadId); }
     typing.remove(); appendAgentMessage(data.response ?? '(no response)');
+    syncRoutineFromAgentText(data.response || '', { silent: true });
     const r = (data.response || '').toLowerCase();
     if (r.match(/discount|sale|\d+%\s*off|deal|save \$/)) { setTimeout(() => pushNotif({type:'discount',icon:'🏷️',title:'Discount detected!',msg:'GlowAgent found a deal. Check the message above!'}), 800); }
   } catch(e) { typing.remove(); appendMsg('agent', `⚠️ ${e.message}`); }
@@ -879,7 +880,7 @@ async function sendMessage() {
 
 if (typeof marked !== 'undefined') { marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false }); }
 
-const S = { profile: {}, routine: { am: [], pm: [] }, notifications: [], unread: 0, attachedImages: [] };
+const S = { profile: {}, routine: { am: [], pm: [] }, routineSource: 'profile', notifications: [], unread: 0, attachedImages: [] };
 const STORAGE_KEYS = { guestMode: 'glow_guest_mode', guestSessionId: 'glow_guest_session_id', profile: 'glow_profile', threadId: 'glow_thread_id' };
 
 function isGuestMode() { return sessionStorage.getItem(STORAGE_KEYS.guestMode) === '1'; }
@@ -913,7 +914,11 @@ function showPage(id) {
   document.querySelectorAll('.pill-item[data-page]').forEach(n => n.classList.toggle('active', n.dataset.page === id));
   const av = document.getElementById('avatar-nav-btn');
   if (av) av.classList.toggle('active', id === 'profile');
-  if (id === 'routine') { renderRoutine(); loadRoutineFromProfile({ silent: true }); }
+  if (id === 'routine') {
+    renderRoutine();
+    const hasAny = [...(S.routine.am || []), ...(S.routine.pm || [])].some(r => r && r.product);
+    if (!hasAny) loadRoutineFromProfile({ silent: true });
+  }
   if (id === 'profile') updateSignoutSection();
 }
 
@@ -1013,6 +1018,45 @@ function buildProfileCtx() {
   if (p.routineAm) parts.push(`Current AM routine: ${p.routineAm}`);
   if (p.routinePm) parts.push(`Current PM routine: ${p.routinePm}`);
   return parts.length ? `[Profile — ${parts.join(' | ')}]\n` : '';
+}
+
+function buildRoutineSyncPromptFromProfile() {
+  const p = S.profile || {};
+  const concerns = (p.concerns && p.concerns.length) ? p.concerns.join(', ') : 'none specified';
+  const allergies = (p.allergies && p.allergies.length) ? p.allergies.join(', ') : 'none specified';
+  const skinType = p.skinType || 'unspecified';
+  const budget = p.budget ? `$${p.budget}/month` : 'unspecified';
+  const goals = p.goals ? String(p.goals).trim() : 'clearer skin';
+  return [
+    `Build me a personalized skincare routine.`,
+    `User profile: skin type=${skinType}; concerns=${concerns}; avoid=${allergies}; budget=${budget}; goals=${goals}.`,
+    `Return a routine in this exact structure so the app can parse it:`,
+    `Morning Routine:`,
+    `Cleanser: <product name>`,
+    `Price: <price>`,
+    `Link: <url>`,
+    `Image: <url or None>`,
+    `Treatment: <product name>`,
+    `Price: <price>`,
+    `Link: <url>`,
+    `Image: <url or None>`,
+    `Moisturizer: <product name>`,
+    `Price: <price>`,
+    `Link: <url>`,
+    `Image: <url or None>`,
+    `Sunscreen: <product name>`,
+    `Price: <price>`,
+    `Link: <url>`,
+    `Image: <url or None>`,
+    `Night Routine:`,
+    `Cleanser: <product name>`,
+    `Treatment: <product name>`,
+    `Price: <price>`,
+    `Link: <url>`,
+    `Image: <url or None>`,
+    `Moisturizer: <product name>`,
+    `Summary: <short summary>`,
+  ].join('\n');
 }
 // function crTab(tab) {
 //   document.getElementById('cr-am').style.display = tab === 'am' ? '' : 'none';
@@ -1227,6 +1271,151 @@ function updateProfileHeader() {
 }
 function updateChatGreeting() { const g = document.getElementById('chat-greeting'); if (!g) return; const name = (S.profile && typeof S.profile.name === 'string') ? S.profile.name.trim() : ''; g.textContent = `Hello, ${name || 'GlowGetter'}!`; }
 
+function _extractFirstUrlFromText(s) {
+  if (!s) return '';
+  const m = String(s).match(/https?:\/\/[^\s\])>"]+/i);
+  return m ? stripTrailingJunkFromUrl(m[0]) : '';
+}
+
+function _normalizeRoutineStepName(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s.includes('cleanser') || s.includes('face wash')) return 'Cleanser';
+  if (s.includes('toner')) return 'Toner';
+  if (s.includes('serum')) return 'Serum';
+  if (s.includes('moisturizer') || s.includes('moisturiser') || s.includes('cream')) return 'Moisturizer';
+  if (s.includes('sunscreen') || s.includes('spf')) return 'Sunscreen';
+  if (s.includes('exfoliant') || s.includes('bha') || s.includes('aha')) return 'Exfoliant';
+  if (s.includes('treatment')) return 'Treatment';
+  if (s.includes('eye')) return 'Eye Cream';
+  return '';
+}
+
+function parseRoutineSlotsFromAgentText(text) {
+  const lines = String(text || '').split('\n');
+  const slots = { am: {}, pm: {}, generic: {} };
+  let currentStep = '';
+  let currentPeriod = 'generic';
+  let currentSlot = null;
+  const ensureStep = (period, step) => {
+    if (!step) return null;
+    const p = (period === 'am' || period === 'pm') ? period : 'generic';
+    if (!slots[p][step]) slots[p][step] = { step, product: null, brand: null, price: null, link: null, image: null };
+    return slots[p][step];
+  };
+  for (const rawLine of lines) {
+    const line = String(rawLine || '').trim();
+    if (!line) continue;
+    if (/^(morning|am)\s*routine:?$/i.test(line)) { currentPeriod = 'am'; currentStep = ''; currentSlot = null; continue; }
+    if (/^(evening|night|pm)\s*routine:?$/i.test(line)) { currentPeriod = 'pm'; currentStep = ''; currentSlot = null; continue; }
+    const stepMatch = line.match(/^Step\s*\d+\s*:\s*(.+)$/i);
+    if (stepMatch) {
+      currentStep = _normalizeRoutineStepName(stepMatch[1]);
+      currentSlot = ensureStep(currentPeriod, currentStep);
+      continue;
+    }
+    const directStepLine = line.match(/^([A-Za-z][A-Za-z '\-\/]+):\s*(.+)$/);
+    if (directStepLine) {
+      const maybeStep = _normalizeRoutineStepName(directStepLine[1]);
+      if (maybeStep && !/^(Product|Price|Link|More Info|Image|Why|Skin Type|Allergens|Summary|Safety Notes|Reassessment Timeline)$/i.test(directStepLine[1].trim())) {
+        currentStep = maybeStep;
+        currentSlot = ensureStep(currentPeriod, currentStep);
+        if (currentSlot) {
+          currentSlot.product = directStepLine[2].trim() || currentSlot.product;
+        }
+        continue;
+      }
+    }
+    const productMatch = line.match(/^Product:\s*(.+)$/i);
+    if (productMatch) {
+      const step = currentStep || '';
+      if (!step) continue;
+      let product = productMatch[1].trim();
+      let brand = '';
+      const trailingBrand = product.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      if (trailingBrand) {
+        product = trailingBrand[1].trim();
+        brand = trailingBrand[2].trim();
+      }
+      const slot = ensureStep(currentPeriod, step);
+      if (!slot) continue;
+      slot.product = product || null;
+      if (brand) slot.brand = brand;
+      currentSlot = slot;
+      continue;
+    }
+    const priceMatch = line.match(/^Price:\s*(.+)$/i);
+    if (priceMatch && currentSlot) {
+      const slot = currentSlot;
+      if (!slot) continue;
+      slot.price = priceMatch[1].trim() || null;
+      continue;
+    }
+    const linkMatch = line.match(/^(?:Link|More Info):\s*(.+)$/i);
+    if (linkMatch && currentSlot) {
+      const slot = currentSlot;
+      if (!slot) continue;
+      const u = _extractFirstUrlFromText(linkMatch[1]);
+      if (u) slot.link = u;
+      continue;
+    }
+    const imgMatch = line.match(/^Image:\s*(.+)$/i);
+    if (imgMatch && currentSlot) {
+      const slot = currentSlot;
+      if (!slot) continue;
+      const u = _extractFirstUrlFromText(imgMatch[1]);
+      if (u) slot.image = u;
+      continue;
+    }
+  }
+  return slots;
+}
+
+function applyRoutineSlotsByStepMap(parsed) {
+  const pick = (period, step) => {
+    const primary = parsed[period] && parsed[period][step];
+    const generic = parsed.generic && parsed.generic[step];
+    return primary || generic || null;
+  };
+  const pickAm = (step) => {
+    let r = pick('am', step);
+    if (!r && step === 'Serum') r = pick('am', 'Treatment') || pick('generic', 'Treatment');
+    return r;
+  };
+  const pickPm = (step) => {
+    let r = pick('pm', step);
+    if (!r && step === 'Treatment') r = pick('pm', 'Serum') || pick('generic', 'Serum');
+    return r;
+  };
+  const mapSlot = (row, stepName) => ({
+    step: stepName,
+    product: row && row.product ? row.product : null,
+    brand: row && row.brand ? row.brand : null,
+    price: row && row.price ? row.price : null,
+    link: row && row.link ? row.link : null,
+    image: row && row.image ? row.image : null,
+  });
+  S.routine.am = STEPS.am.map(s => mapSlot(pickAm(s.name), s.name));
+  S.routine.pm = STEPS.pm.map(s => mapSlot(pickPm(s.name), s.name));
+}
+
+function syncRoutineFromAgentText(text, opts = {}) {
+  const parsed = parseRoutineSlotsFromAgentText(text);
+  const matched = [
+    ...Object.values(parsed.am || {}),
+    ...Object.values(parsed.pm || {}),
+    ...Object.values(parsed.generic || {}),
+  ].filter((r) => r && r.product);
+  if (!matched.length) return false;
+  applyRoutineSlotsByStepMap(parsed);
+  S.routineSource = 'chat';
+  renderRoutine();
+  if (!opts.silent) {
+    pushNotif({ type:'success', icon:'🧴', title:'Routine synced from chat', msg:'Your routine page now matches the latest AI recommendations.' });
+  }
+  return true;
+}
+
 function loadProfile() {
   try {
     const saved = getAppStorage().getItem(STORAGE_KEYS.profile); if (!saved) { S.profile = {}; resetProfileForm(); updateProfileHeader(); return; }
@@ -1263,9 +1452,11 @@ function applyPlaceholderRoutineSlots(profileBody) {
   const tag = (profileBody&&profileBody.skin_type) ? ` (${profileBody.skin_type.trim()})` : '';
   const am = [['Gentle Daily Cleanser','SampleCo'],['Hydrating Prep Toner','SampleCo'],['Vitamin C Glow Serum','SampleCo'],['Oil-Free Gel Moisturizer','SampleCo'],['SPF 50 Sheer Sunscreen','SampleCo']];
   const pm = [['Melting Balm Cleanser','SampleCo'],['Exfoliating Toner (AHA/BHA)','SampleCo'],['Night Repair Serum','SampleCo'],['Rich Night Cream','SampleCo'],['Peptide Eye Cream','SampleCo']];
-  const row = (stepName, pair) => ({ step:stepName, product:pair[0]+tag, brand:pair[1], price:null, link:googleProductSearchUrl(pair[0]+' '+pair[1]+' skincare buy'), image:null });
+  const est = { Cleanser:12, Toner:11, Serum:16, Moisturizer:14, Sunscreen:15, Exfoliant:13, Treatment:18, 'Eye Cream':14 };
+  const row = (stepName, pair) => ({ step:stepName, product:pair[0]+tag, brand:pair[1], price:`$${(est[stepName]||12).toFixed(2)}`, link:googleProductSearchUrl(pair[0]+' '+pair[1]+' skincare buy'), image:null });
   S.routine.am = STEPS.am.map((s,i) => row(s.name, am[i]||['Skincare pick','SampleCo']));
   S.routine.pm = STEPS.pm.map((s,i) => row(s.name, pm[i]||['Skincare pick','SampleCo']));
+  S.routineSource = 'fallback';
 }
 
 let routineSyncInFlight = false;
@@ -1280,6 +1471,25 @@ async function loadRoutineFromProfile(opts={}) {
   document.getElementById('routine-am-grid').innerHTML = loading; document.getElementById('routine-pm-grid').innerHTML = loading;
   try {
     const profileBody = { skin_type:p.skinType||'', concerns:p.concerns||[], allergies:p.allergies||[] };
+    const agentPrompt = buildRoutineSyncPromptFromProfile();
+    let agentRes = await fetch(getEndpoint(), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+      body: JSON.stringify({ message: agentPrompt, thread_id: threadId }),
+    });
+    if (agentRes.status===401) { showLoginScreen(); return false; }
+    if (agentRes.ok) {
+      const data = await agentRes.json();
+      if (data.thread_id) { threadId = data.thread_id; saveThreadId(threadId); }
+      const synced = syncRoutineFromAgentText(data.response || '', { silent: true });
+      if (synced) {
+        if (hint) hint.textContent='Updated from the latest AI routine recommendation.';
+        if (!opts.silent) pushNotif({type:'success',icon:'✨',title:'Routine updated',msg:'Routine page now mirrors the latest chat recommendations.'});
+        return true;
+      }
+    }
+
+    // Fallback to profile-ranking endpoint only if agent response is unavailable/unparseable.
     const attempts = collectRoutineFillAttempts(profileBody, threadId); let res = null;
     for (const { url, body } of attempts) { res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}`, 'X-Glow-Sync-Routine':'1' }, body }); if (res.status===401) { showLoginScreen(); return false; } if (res.status!==404) break; }
     if (!res || res.status===404) { const chain = attempts.length ? attempts.map(a => resolveApiAbsolute(a.url)).join(' → ') : '(no URLs)'; throw new Error(`HTTP 404: Not Found · Tried: ${chain}`); }
@@ -1289,7 +1499,7 @@ async function loadRoutineFromProfile(opts={}) {
     const rp = data.routine && (data.routine.am||data.routine.pm) ? data.routine : data;
     const mapSlot = r => ({ step:r.step, product:r.product||null, brand:r.brand||null, price:r.price||null, link:r.link||null, image:r.image||null });
     const mergeByStep = (tab, rows) => { const byStep = Object.fromEntries((rows||[]).map(r=>[r.step,r])); return STEPS[tab].map(s => { const r = byStep[s.name]; return r ? mapSlot(r) : {step:s.name,product:null,brand:null,price:null,link:null,image:null}; }); };
-    S.routine.am = mergeByStep('am', rp.am); S.routine.pm = mergeByStep('pm', rp.pm); renderRoutine();
+    S.routine.am = mergeByStep('am', rp.am); S.routine.pm = mergeByStep('pm', rp.pm); S.routineSource = 'profile'; renderRoutine();
     if (hint) hint.textContent='Updated from your saved profile. Prices vary by retailer.';
     if (!opts.silent) pushNotif({type:'success',icon:'✨',title:'Routine updated',msg:'Top picks are filled for AM and PM.'}); return true;
   } catch(e) { if (hint) hint.textContent='Could not load picks. Try again in a moment.'; if (!opts.silent) pushNotif({type:'warning',icon:'⚠️',title:'Sync failed',msg:e.message||String(e)}); renderRoutine(); return false; }
@@ -1303,8 +1513,18 @@ function renderRoutine() {
       return `<div class="routine-step-card"><div class="step-header" style="background:${has?'var(--surface2)':'var(--bg)'}"><div class="step-num">${s.num}</div><div><div class="step-label">${s.label}</div><div class="step-name">${s.icon} ${s.name}</div></div></div><div class="step-body" style="padding-top:12px">${has?`<div class="product-in-step"><div class="product-icon">${s.icon}</div><div style="flex:1"><div class="product-name-t">${d.product}</div><div class="product-brand-t">${d.brand||''}</div><div class="product-price-t">${d.price||''}${d.link?`<a href="${sanitizeRetailProductLink(d.link)}" target="_blank" rel="noopener noreferrer" class="product-link">Shop →</a>`:''}</div></div></div>`:`<div style="text-align:center;padding:14px;color:var(--muted2);font-size:.78rem;border:1.5px dashed var(--border);border-radius:10px">No product yet.<br/><span style="color:var(--rose);cursor:pointer;font-weight:600" onclick="goToChat('Recommend a ${s.name.toLowerCase()} for my skin type')">Ask GlowAgent →</span></div>`}</div></div>`;
     }).join('');
   });
-  const total = [...S.routine.am,...S.routine.pm].filter(d=>d&&d.price).reduce((sum,d)=>sum+(parseFloat((d.price||'').replace('$',''))||0),0);
-  document.getElementById('routine-total-cost').textContent = total>0 ? `$${total.toFixed(2)}` : '—';
+  const extractPrice = (raw) => {
+    if (!raw) return 0;
+    const m = String(raw).match(/(\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : 0;
+  };
+  const total = [...S.routine.am,...S.routine.pm].reduce((sum,d)=>sum+extractPrice(d&&d.price),0);
+  if (total > 0) {
+    document.getElementById('routine-total-cost').textContent = `$${total.toFixed(2)}`;
+  } else {
+    const b = parseFloat((S.profile && S.profile.budget) ? S.profile.budget : '');
+    document.getElementById('routine-total-cost').textContent = Number.isFinite(b) && b > 0 ? `~$${b.toFixed(2)}` : '—';
+  }
 }
 
 function switchRoutineTab(tab) {
@@ -1314,7 +1534,7 @@ function switchRoutineTab(tab) {
   document.getElementById('tab-pm').className = `btn btn-sm ${tab==='pm'?'btn-primary':'btn-secondary'}`;
 }
 
-function clearRoutine() { S.routine = emptyRoutineSlots(); const hint = document.getElementById('routine-sync-hint'); if (hint) { hint.style.display='block'; hint.textContent='Cleared. Tap Fill from profile anytime.'; } renderRoutine(); }
+function clearRoutine() { S.routine = emptyRoutineSlots(); S.routineSource = 'manual'; const hint = document.getElementById('routine-sync-hint'); if (hint) { hint.style.display='block'; hint.textContent='Cleared. Tap Fill from profile anytime.'; } renderRoutine(); }
 
 function scheduleNotifs() {
   setTimeout(() => {

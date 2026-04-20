@@ -33,6 +33,17 @@ PM_STEP_SPECS = [
     ("Eye Cream", "moisturizer", "eye cream eye treatment"),
 ]
 
+STEP_ESTIMATED_PRICE_USD = {
+    "Cleanser": 12.0,
+    "Toner": 11.0,
+    "Serum": 16.0,
+    "Moisturizer": 14.0,
+    "Sunscreen": 15.0,
+    "Exfoliant": 13.0,
+    "Treatment": 18.0,
+    "Eye Cream": 14.0,
+}
+
 
 def _allergy_filter(candidates: pd.DataFrame, allergies: list[str]) -> pd.DataFrame:
     out = candidates
@@ -92,11 +103,12 @@ def _row_to_slot(step: str, row: pd.Series) -> dict[str, Any]:
             image = _google_image_search(label)
         else:
             image = ps
+    est_price = STEP_ESTIMATED_PRICE_USD.get(step)
     return {
         "step": step,
         "product": name or None,
         "brand": brand or None,
-        "price": None,
+        "price": f"${est_price:.2f}" if est_price is not None else None,
         "link": link,
         "image": image,
     }
