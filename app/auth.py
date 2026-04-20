@@ -9,6 +9,7 @@ which extracts the user's Auth0 sub (unique ID) from the JWT.
 
 import os
 import httpx
+import hashlib
 from functools import lru_cache
 from typing import Optional
 
@@ -66,6 +67,27 @@ def _require_auth0_settings() -> tuple[str, str]:
     return domain, AUTH0_AUDIENCE
 
 
+def _auth0_is_configured() -> bool:
+    return bool(AUTH0_DOMAIN and AUTH0_AUDIENCE)
+
+
+def _dev_user_from_any_token(token: str) -> Optional[dict]:
+    """
+    Local fallback: when Auth0 env vars are missing, accept any bearer token so
+    chat/routine still work in dev instead of failing with 503.
+    """
+    if not token:
+        return None
+    if _auth0_is_configured():
+        return None
+    digest = hashlib.sha256(token.encode("utf-8", errors="ignore")).hexdigest()[:16]
+    return {
+        "sub": f"dev|{digest}",
+        "name": "Local Dev User",
+        "dev_auth_bypass": True,
+    }
+
+
 @lru_cache(maxsize=1)
 def get_jwks() -> dict:
     """
@@ -100,6 +122,9 @@ def verify_token(token: str) -> dict:
     guest_user = _guest_user_from_token(token)
     if guest_user is not None:
         return guest_user
+    dev_user = _dev_user_from_any_token(token)
+    if dev_user is not None:
+        return dev_user
     try:
         domain, audience = _require_auth0_settings()
         # Get the signing key that matches this token's 'kid' header
