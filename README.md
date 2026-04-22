@@ -56,9 +56,17 @@ It includes:
 GlowAgent/
 ├── app/
 │   ├── __init__.py
+│   ├── auth.py
+│   ├── chat_llm.py
 │   ├── build_vectorstore.py   # One-time script to embed CSVs into ChromaDB
 │   ├── glow_agent.py          # Agent definition, tools, LLM, memory
 │   └── main.py                # FastAPI app and /chat endpoint
+│   ├── product_rank_score.py  # Pandas-only scoring for product ranking
+│   ├── products_csv.py        # Load product CSV with pandas only
+│   ├── products_data.py       # Process shared product dataframe for ranking and tools
+│   ├── routine_links.py       # Google search URL helpers
+│   ├── routine_recommend.py   # Build AM/PM routine slots from the product dataset
+│   ├── skin_analysis.py       # PerfectCorp skin analysis integration
 ├── chroma_db/                 # Persisted ChromaDB vector store (auto-generated)
 │   ├── 50c3068e-9d67-433f-97c3-7d8cee499f47/
 │   └── chroma.sqlite3
