@@ -45,31 +45,35 @@ import pandas as pd
 
 _product_image_by_name = dict(zip(products_df["product_name"], products_df["picture_src"]))
 
+# def _enrich_product_doc_with_image(page_content: str) -> str:
+#     """Insert Image: URL after More Info when the product exists in the local CSV (vector chunks may omit it)."""
+#     if "Image:" in page_content:
+#         return page_content
+#     name = None
+#     for line in page_content.split("\n"):
+#         if line.startswith("Product:"):
+#             name = line.replace("Product:", "").strip()
+#             break
+#     if not name:
+#         return page_content
+#     pic = _product_image_by_name.get(name)
+#     if not pic or str(pic) in ("Unknown", "nan") or not str(pic).startswith("http"):
+#         return page_content
+#     lines = page_content.split("\n")
+#     out = []
+#     inserted = False
+#     for line in lines:
+#         out.append(line)
+#         if not inserted and line.startswith("More Info:"):
+#             out.append(f"Image: {pic}")
+#             inserted = True
+#     if not inserted:
+#         out.append(f"Image: {pic}")
+#     return "\n".join(out)
+
 def _enrich_product_doc_with_image(page_content: str) -> str:
-    """Insert Image: URL after More Info when the product exists in the local CSV (vector chunks may omit it)."""
-    if "Image:" in page_content:
-        return page_content
-    name = None
-    for line in page_content.split("\n"):
-        if line.startswith("Product:"):
-            name = line.replace("Product:", "").strip()
-            break
-    if not name:
-        return page_content
-    pic = _product_image_by_name.get(name)
-    if not pic or str(pic) in ("Unknown", "nan") or not str(pic).startswith("http"):
-        return page_content
-    lines = page_content.split("\n")
-    out = []
-    inserted = False
-    for line in lines:
-        out.append(line)
-        if not inserted and line.startswith("More Info:"):
-            out.append(f"Image: {pic}")
-            inserted = True
-    if not inserted:
-        out.append(f"Image: {pic}")
-    return "\n".join(out)
+    """Images fetched live via og:image scrape — skip broken CSV URLs."""
+    return page_content
 
 """# STEP 2: Set up short term memory"""
 
@@ -95,7 +99,7 @@ from langchain_tavily import TavilySearch
 
 """### Database search tool"""
 @tool
-def skincare_database_search(query: str) -> str:
+def skincare_database_search(query: str, max_results: int = 3) -> str:
     """
     Search the GlowAgent skincare product and ingredient database.
 
@@ -125,7 +129,8 @@ def skincare_database_search(query: str) -> str:
     ratings, skin type suitability, and ingredient lists.
     """
 
-    docs = vectorstore.similarity_search(query, k=4)
+    k = max(6, max_results * 2)
+    docs = vectorstore.similarity_search(query, k=k)
     if not docs:
         return "No matching skincare products found."
     enriched = [_enrich_product_doc_with_image(doc.page_content) for doc in docs]
@@ -334,7 +339,11 @@ def _normalize_tavily_price_rows(product: str, results: dict) -> tuple[list[dict
             "source_text": content,
         })
 
-    rows.sort(key=lambda row: (_retailer_rank(row.get("url", "")), row["price"]))
+    # rows.sort(key=lambda row: (_retailer_rank(row.get("url", "")), row["price"]))
+    rows.sort(key=lambda row: (
+    float(row["price"].replace("$","").replace(",","").strip() or 999),
+    _retailer_rank(row.get("url", ""))
+    ))
     fallback_links.sort(key=lambda row: _retailer_rank(row.get("url", "")))
     return rows, fallback_links
 
@@ -438,7 +447,7 @@ print(result)
 
 """### Product Ranking Tool
 
-The product ranking tool scores and ranks skincare products from the local
+The product ranking tool scores and ranks skincare products from the localf
 database based on the user's skin type, concerns, and product category.
 It helps the agent choose the best options (1st, 2nd, 3rd, etc.) when
 presenting recommendations.
@@ -451,7 +460,7 @@ def product_ranking_tool(
     concerns: str = "",
     product_type: str = "",
     allergies: str = "",
-    max_results: int = 5,
+    max_results: int = 2,
 ) -> str:
     """
     Rank skincare products from the GlowAgent database by relevance to the user.
@@ -467,7 +476,9 @@ def product_ranking_tool(
     - concerns: User's skin concerns (comma-separated): acne, pores, dryness, etc.
     - product_type: Category filter: cleanser, moisturizer, serum, sunscreen, toner
     - allergies: Ingredients to avoid (comma-separated): fragrance, niacinamide
-    - max_results: How many top products to return (default 5)
+    - max_results: How many top products to return. Default is 3.
+      Pass exactly what the user requested — if user asks "top 5" pass 5,
+      if user asks "top 10" pass 10. For routine steps always pass 3.
 
     Returns: A ranked list of products with name, brand, category, effects,
     skin types, link, and image URL when available — best match first.
@@ -522,6 +533,23 @@ def product_ranking_tool(
 
     # Format output for the agent (href may be blank — legacy beautyhaul URLs stripped at load)
     lines = []
+
+    # for i, (_, row) in enumerate(ranked.iterrows(), 1):
+    #     label = f"{row['brand']} {row['product_name']}".strip()
+    #     retailer_url, og_image = _get_product_image_from_retailer(label)
+
+    #     block = (
+    #         f"{i}. {row['product_name']} ({row['brand']})\n"
+    #         f"   Category: {row['product_type']} | Effects: {row['notable_effects']}\n"
+    #         f"   Skin types: {row['skin_types_str']}\n"
+    #         f"   Link: {retailer_url}"
+    #     )
+    #     if og_image:
+    #         block += f"\n   Image: {og_image}"
+    #     lines.append(block)
+    # text = "\n\n".join(lines)
+    # return _resolve_product_ranking_output_text(text)
+
     for i, (_, row) in enumerate(ranked.iterrows(), 1):
         href = str(row.get("product_href", "") or "").strip()
         if href in ("Unknown", "nan") or not href.startswith("http"):
@@ -532,10 +560,25 @@ def product_ranking_tool(
             f"   Skin types: {row['skin_types_str']}\n"
             f"   Link: {href}"
         )
-        pic = row.get("picture_src", "")
-        if pic and str(pic) not in ("Unknown", "nan") and str(pic).startswith("http"):
-            block += f"\n   Image: {pic}"
+        # pic = row.get("picture_src", "")
+        # if pic and str(pic) not in ("Unknown", "nan") and str(pic).startswith("http"):
+        #     block += f"\n   Image: {pic}"
+        # Images fetched live via Tavily — skip broken CSV URLs
+        # Frontend will show placeholder; Tavily image search used instead
+        pass
         lines.append(block)
+        # label = f"{row['brand']} {row['product_name']}".strip()
+        # retailer_url, og_image = _get_product_image_from_retailer(label)
+
+        # block = (
+        #     f"{i}. {row['product_name']} ({row['brand']})\n"
+        #     f"   Category: {row['product_type']} | Effects: {row['notable_effects']}\n"
+        #     f"   Skin types: {row['skin_types_str']}\n"
+        #     f"   Link: {retailer_url}"
+        # )
+        # if og_image:
+        #     block += f"\n   Image: {og_image}"
+        # lines.append(block)
     text = "\n\n".join(lines)
     return _resolve_product_ranking_output_text(text)
 
@@ -568,6 +611,36 @@ def _is_url_reachable(url: str, timeout: float = 8.0) -> bool:
             continue
     return False
 
+def _fetch_og_image(url: str, timeout: float = 5.0) -> str:
+    """Try og:image first, fallback to Google Images search URL for the product."""
+    if not url or not url.startswith(("http://", "https://")):
+        return ""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.getcode() >= 400:
+                return ""
+            html = resp.read(60000).decode("utf-8", errors="ignore")
+        for pattern in [
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+        ]:
+            m = re.search(pattern, html, re.I)
+            if m:
+                img = m.group(1).strip()
+                if img.startswith("http"):
+                    return img
+        return ""
+    except Exception:
+        return ""
 
 def _guess_product_query_from_url(url: str) -> str:
     try:
@@ -1008,8 +1081,6 @@ def test_valid_link(link: str, product_name: str = "") -> str:
     return f"Use this link for the user:\nLink: {url}"
 
 
-
-
 """### Notification tool"""
 
 # Enter the code for notifcation tool
@@ -1017,59 +1088,251 @@ def test_valid_link(link: str, product_name: str = "") -> str:
 """# STEP 7: Generation -- Build and Test the Multi-Tool Agent"""
 
 # System prompt — tells the agent WHEN to use each tool
-multi_tool_prompt = """You are GlowAgent, an AI-powered skincare assistant designed
-for U.S.-based users aged 18–24 who want effective, budget-friendly skincare
-recommendations. Your role is to act as a non-diagnostic, educational skincare
-guide that helps users build, evaluate, and optimize their routines.
+multi_tool_prompt = """You are GlowAgent, a friendly AI skincare assistant built for U.S.-based users aged 18–24 who want effective, budget-conscious skincare routines without hours of research.
 
-You have five tools. Use them in this priority order:
+═══════════════════════════════════════
+CORE IDENTITY
+═══════════════════════════════════════
+- You are a non-diagnostic, educational skincare guide
+- Never diagnose skin conditions or recommend prescription treatments
+- Always suggest consulting a dermatologist for persistent or severe concerns
+- Never recommend products that exceed the user's stated budget
+- If no budget is stated, default to recommending options under $25 per product
 
+═══════════════════════════════════════
+CONVERSATION RULES
+═══════════════════════════════════════
+- If the user sends a casual message ("hi", "hello", "how are you", "what can you do")
+  → respond naturally and briefly, ask how you can help with their skincare
+  → NEVER auto-recommend products unprompted
+- Only recommend products when the user EXPLICITLY asks for recommendations,
+  a routine, or product suggestions
+- Do not assume the user wants skincare advice just because they opened the chat
+
+GREETING RULES:
+- Only greet the user by name on their very FIRST message of the session
+- Only greet the user by name ONCE on their very first message
+- After that, never START a response with "Hey [Name]", "Hi [Name]", "Hello [Name]"
+- You CAN use their name naturally mid-sentence anytime
+  e.g. "Here are the top cleansers for your skin type, Maha"
+  e.g. "Since you have dry skin, Maha, this one would work really well"
+  e.g. "Okay Maha, based on what you told me..."
+- Just never open with it as a greeting after message 1
+
+QUERY TYPE — identify before every response:
+- TYPE A: Full routine request ("build me a routine", "what's my full AM routine")
+  → Use full routine format with all steps
+  → Only say AM/PM if user explicitly mentioned it
+- TYPE B: Single product request ("suggest a cleanser", "recommend a toner")
+  → Show ONLY that product category — 3 options, no other steps
+- TYPE C: Follow-up ("now add a moisturizer", "what about sunscreen")
+  → No greeting, show only requested step
+  → Reference previous recommendations if relevant
+- TYPE D: Price/ingredient/general question
+  → Answer directly, no routine format
+
+═══════════════════════════════════════
+TOOL USAGE — FOLLOW THIS ORDER
+═══════════════════════════════════════
 1. skincare_database_search
-   USE FOR: Initial product recommendations, skin-type matching, budget filtering,
-   product categories (cleanser, moisturizer, serum, sunscreen).
-   Start with this tool for recommendation and ingredient-adjacent product lookup tasks.
-   Do not use this first when the user is asking for current price, current availability,
-   or other live web information.
+   - First stop for all product recommendations
+   - Use for: skin type matching, category search, budget filtering
 
 2. product_ranking_tool
-   USE FOR: Ranking products by relevance when the user wants "best", "top 3",
-   or prioritized options. Call with query + skin_type + concerns + product_type
-   + allergies to get products ordered best-to-worst. Use after or instead of
-   skincare_database_search when ordering matters.
+   - Call AFTER skincare_database_search
+   -  Always pass: query + skin_type + concerns + product_type + allergies + max_results=2
+   - If user requests more products, pass that exact number as max_results
+   - ALWAYS use this when building a routine or recommending products
 
-3. test_valid_link
-   USE FOR: Rare manual override. Database tools already set More Info:/Link: via
-   Tavily from the product name. Call with product_name if you need a link for a
-   product you described without using those tools.
+3. tavily_search_tool
+   - Call when user asks about price, cost, where to buy, or availability
+   - Call for EVERY product that has no price listed before responding
+   - Never say "price unavailable" without first calling this tool
 
 4. open_beauty_facts_search
-   USE FOR: Verifying full ingredient lists, allergen checks (parabens, fragrance,
-   sulfates), products not in the local database, or when a user asks what
-   is in a specific named product.
+   - Use for: full ingredient lists, allergen verification
+   - Call when user asks "what's in this product" or has specific allergies to verify
 
-5. tavily_search_tool
-   USE FOR: Current prices, trending products, recent reviews, new launches,
-   or any information that changes frequently.
-   Use this first when the user asks how much a product costs, what the current
-   price is, where to buy it, or other live web data beyond link verification.
-   If the user asks for price/cost/how much, call this tool before answering.
+5. test_valid_link
+   - Use only when you need a product link and none was returned by tools
+   - Always pass product_name (brand + product name)
 
-When giving skincare routine recommendations:
-- Organize by step: Cleanser → Treatment → Moisturizer → Sunscreen
-- For each product include: name, brand, why it suits the concern,
-  price, skin type suitability, and any allergen flags
-- Suggest a lower-cost alternative when possible
-- End with a short summary, safety notes, and reassessment timeline (6–8 weeks)
+═══════════════════════════════════════
+BUDGET RULES
+═══════════════════════════════════════
+- User's stated budget covers ALL products combined
+- These products are SHARED between AM and PM — count once:
+  → Cleanser, Moisturizer
+- These are AM only: Toner, Serum, Sunscreen
+- These are PM only: Treatment, Eye Cream, Exfoliant
+- Always include at least 1 drugstore option (under $15) per step
+- If budget under $50: prioritize CeraVe, Neutrogena, The Ordinary, Cetaphil
+- Show total cost at end counting shared products only once
 
-The product CSV was originally sourced from beautyhaul.com. Do not paste beautyhaul.com
-URLs in your reply (not for Link:, More Info:, or Image:)—the server strips them, and
-users see broken pages. Tool output is rewritten to U.S.-friendly retailers or Google search;
-copy those lines verbatim. If a tool line has no link yet, describe the product without a URL.
+═══════════════════════════════════════
+PRICE RULES
+══════════════════════════════════════=
+- ALWAYS fetch live price via tavily_search_tool — no exceptions
+- Call Tavily once per step with all 3 product names together:
+  e.g. "CeraVe Foaming Cleanser vs Neutrogena vs La Roche-Posay price"
+- If Tavily returns no price on first call, retry with:
+  "[product name] price site:ulta.com OR site:sephora.com OR site:target.com"
+- If second call also fails, try:
+  "[product name] price"
+- Only after ALL 3 attempts fail, show "Price check unavailable — see retailer link"
+- Never skip price fetching — always try all 3 queries before giving up
+- Always show exact price as returned by Tavily including cents (e.g. $12.99 not $12)
+- Never round prices up or down
+═══════════════════════════════════════
+PRICE + LINK CONSISTENCY:
+═══════════════════════════════════════
+- Image: URL comes from tool output verbatim — copy it exactly, never invent one
+- If no Image: field was returned by the tool, leave Image: blank
+- NEVER use beautyhaul.com, shopee, or any .co.id image URLs
+- The retailer where the lowest price is found = the source for More Info link
+- NEVER show a price from Target but link to Amazon
+- For each product, call tavily_search_tool with "[Brand] [Product Name] site:ulta.com OR site:sephora.com OR site:target.com OR site:amazon.com"
+- The first result URL from that search = the More Info link
+- To get the product image: after getting the Tavily result URL, use the page thumbnail or og:image if available, otherwise leave Image field blank
+- NEVER use picture_src or any CSV image URL — these are broken
+- NEVER invent image URLs
+- If no image found from Tavily result, leave Image: blank — the frontend handles the placeholder gracefully
 
-When tools return products, preserve More Info:, Link:, and Image: lines exactly as the tool
-printed them after retrieval—do not substitute catalog URLs from memory.
+═══════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════
 
-Keep explanations clear, concise, and educational — not overly clinical.
+TONE RULES — MOST IMPORTANT:
+- Write like a knowledgeable friend, not a database
+- Be warm, conversational, and encouraging
+- Use the user's name naturally in the response
+- Avoid sounding like you are listing facts — explain WHY
+- Minimal emojis — only use 🌅 and 🌙 for AM/PM headers
+- No excessive symbols, borders, or decorative lines
+
+TYPE A — FULL ROUTINE:
+──────────────────────────────────────
+Start with 1-2 warm sentences that acknowledge their specific skin type 
+and concerns. Every opening must feel fresh and different — never repeat 
+the same opening line across conversations.
+
+Then for AM or PM (whichever was asked):
+
+### Step 1: Cleanser
+
+#### Option 1 — [Product Name] | [Brand]
+- **Why it suits you:** [conversational explanation tied to their specific concerns]
+- **Skin type:** [skin types]
+- **Price:** $XX
+- **Allergen flags:** [or "None"]
+More Info: [URL]
+Image: [URL]
+
+#### Option 2 — [Product Name] by [Brand]
+[same fields and same format]
+
+#### ⭐ Budget Pick — [Product Name] by [Brand]
+[same fields and same format]
+
+[Repeat for each step same formatting
+for AM - Step 1: Cleanser, Step 2: Toner, Step 3: Serum, Step 4: Mousturizer, Step 5: Sunscreen
+for PM - Step 1: Cleanser, Step 2: Exfoliant, Step 3: Trestment, Step 4: Mousturizer, Step 5: Eye cream]
+
+### Important Notes:
+Write as natural flowing sentences bullet points.
+Always cover: patch testing, SPF reminder, any ingredient conflicts.
+Tailor the language to what products were actually recommended.
+
+### Cost Breakdown:
+[table — frontend will style this]
+| Product | Used In | Price |
+|---------|---------|-------|
+| [name] | AM + PM | $XX |
+...
+| Total | | $XX |
+
+### Summary:
+Write 2-3 warm sentences specific to this user's concerns and 
+the products recommended. End differently every time — 
+never use the same closing line twice.
+Always include: what the routine targets, what to expect, 6-8 week timeline.
+Also for example after giving pm routine in summary confirm that it is underbudget 
+or else ask user to pick the products which are low price from the return results for each product type. 
+Also keep some space for am routine products budget also. 
+
+──────────────────────────────────────
+TYPE B — SINGLE PRODUCT REQUEST:
+──────────────────────────────────────
+Start with a natural sentence introducing the category recommendations,
+tied to the user's specific skin type and concerns.
+Never use the same opening twice.
+
+### Option 1 — [Product Name] | [Brand]
+- **Why it suits you:** [conversational explanation tied to their specific concerns]
+- **Skin type:** [skin types]
+- **Price:** $XX
+- **Allergen flags:** [or "None"]
+More Info: [URL]
+Image: [URL]
+
+### Option 2 — [Product Name] by [Brand]
+[same fields and same format]
+
+### ⭐ Budget Pick — [Product Name] by [Brand]
+[same fields and same format]
+
+#### Important Notes:
+Write as natural flowing sentences bullet points.
+Always cover: patch testing, SPF reminder, any ingredient conflicts.
+Tailor the language to what products were actually recommended.
+
+#### Summary:
+Write 2-3 warm sentences specific to this user's concerns and 
+the products recommended. End differently every time — 
+never use the same closing line twice.
+Always include: what the routine targets, what to expect, 6-8 week timeline.
+
+──────────────────────────────────────
+TYPE C — FOLLOW UP REQUEST:
+──────────────────────────────────────
+Naturally reference the previous recommendation from conversation history.
+Explain briefly how this new step complements what was already suggested.
+Same format as TYPE B.
+End by connecting this product to the previous one — explain why they work 
+well together. Include 6-8 week timeline, phrased naturally.
+
+═══════════════════════════════════════
+INGREDIENT CONFLICT DETECTION
+═══════════════════════════════════════
+Before finalizing any routine check for:
+- Retinol + AHA/BHA → alternate evenings, never same night
+- Vitamin C + Niacinamide high % → use at different times
+- Benzoyl Peroxide + Retinol → use separately
+- Multiple exfoliants → over-exfoliation risk, pick one
+- Vitamin C + Retinol → Vitamin C AM only, Retinol PM only
+If no conflicts: "✅ No ingredient conflicts detected."
+
+═══════════════════════════════════════
+STRICT RULES — NEVER BREAK
+═══════════════════════════════════════
+- NEVER show beautyhaul.com URLs — copy tool output URLs verbatim only
+- NEVER invent product links or image URLs
+- NEVER skip a routine step — if no product found call tavily_search_tool
+- NEVER say "price unavailable" without first calling tavily_search_tool
+- NEVER exceed the user's stated budget
+- NEVER recommend the same product in two different steps
+- Default to showing 2 options per step unless user explicitly requests more
+- Always mark the cheaper option as ⭐ Budget Pick
+- If user asks for "top 5", "top 10" etc — honor that number
+- When user requests more than 3, pass that exact number 
+  as max_results to product_ranking_tool
+- ALWAYS include Image: and More Info: for every product
+- ALWAYS end FULL ROUTINE requests with cost table + summary + timeline
+- NEVER show cost table for single product requests (TYPE B)
+- For single product requests just show:
+  → 2 product options with live price per product unless user requests more
+  → Brief 1-2 line summary of why these suit the user
+  → No cost table, but show timeline 
 """
 
 agent = create_react_agent(
@@ -1148,45 +1411,3 @@ for chunk in multi_tool_agent.stream(
         print(f"Content: {data['messages'][-1].content_blocks}")
         print()
 '''
-
-
-"""Must-Have Tools
-
-1. **skincare_database_search**
-
-*  Retrieves skincare products from your dataset.
-*  Core tool for product recommendations.
-
-
-2. **open_beauty_facts_search**
-
-*   Fetches ingredient information.
-*   Helps verify product safety and ingredients.
-
-3. **tavily_price_search**
-
-*   Finds real-time prices and discounts online.
-*   Important for affordable skincare recommendations.
-
-4. **product_ranking_tool**
-
-*   Ranks products (best → second best → third best)
-*   Helps the agent choose the most suitable product.
-
-5. **routine_builder_tool**- Converts recommendations into a complete skincare routine.
-
-Good to Add
-
-6. **ingredient_safety_checker**- Flags harmful or irritating ingredients.
-
-7. **skin_image_analysis**- Lets users upload a photo to detect skin issues.
-
-Optional
-
-8. **budget_optimizer_tool**- Suggests cheaper alternatives.
-
-9. **notification_tool**- Sends skincare reminders.
-
-10. **user_profile_manager**- Stores user preferences (skin type, allergies, budget).
-
-"""
