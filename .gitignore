@@ -45,4 +45,4 @@ env/
 Thumbs.db
 
 # LangSmith / tracing
-.langchain/
+.langchain/chroma_db/
