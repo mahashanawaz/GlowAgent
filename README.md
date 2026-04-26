@@ -2,6 +2,8 @@
 
 **GlowAgent** is an AI-powered skincare recommendation assistant built for U.S.-based users aged 18–24 who want effective, budget-conscious skincare routines without hours of research. It uses a tool-augmented agent + RAG to deliver personalized routines, product comparisons, ingredient checks, and price insights.
 
+Check it out at https://glowagent.onrender.com/!
+
 **Frontend:** a responsive **single-page web UI** (`static/index.html`) served directly by **FastAPI** at `/ui`.
 
 ---
